@@ -1,9 +1,17 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import html2pdf from 'html2pdf.js';
-import { FileText, Download, Trash2, User, Bot, List, Table, Clipboard, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, Download, Trash2, User, Bot, List, Table, Clipboard, Check, ChevronDown, ChevronUp, Zap, Search, RotateCcw, Merge, BookOpen } from 'lucide-react';
+
+// ── New algorithm pipeline ──
+import { analyzeConversation } from './algorithm';
+import type { AnalysisResult, AnalyzedMessage } from './algorithm';
+import { detectLLMWithConfidence } from './algorithm/llmDetector';
+import type { LLMType } from './algorithm/llmDetector';
+import { addRoleCorrection, getStoreStats, clearStore } from './algorithm/correctionStore';
+import { recomputeWeights } from './algorithm/weightUpdater';
 
 // ══════════════════════════════════════════════════════════
 // ERROR BOUNDARY — silently swallows component render errors
@@ -613,6 +621,160 @@ function buildNotebookLMMarkdown(turns: Turn[]): string {
 }
 
 // ══════════════════════════════════════════════════════════
+// LLM SELECTOR COMPONENT
+// ══════════════════════════════════════════════════════════
+const LLM_OPTIONS: { value: LLMType; label: string; icon: string }[] = [
+  { value: 'ChatGPT', label: 'ChatGPT', icon: '🤖' },
+  { value: 'Claude', label: 'Claude', icon: '🟠' },
+  { value: 'Gemini', label: 'Gemini', icon: '✨' },
+  { value: 'Unknown', label: 'Other', icon: '❓' },
+];
+
+function LLMSelector({
+  detected,
+  selected,
+  confidence,
+  onSelect,
+}: {
+  detected: LLMType;
+  selected: LLMType;
+  confidence: number;
+  onSelect: (llm: LLMType) => void;
+}) {
+  const confPercent = Math.round(confidence * 100);
+  const confColor = confidence >= 0.7 ? '#22c55e' : confidence >= 0.4 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div className="llm-selector">
+      <div className="llm-detect-info">
+        <Search size={12} strokeWidth={2} />
+        <span>Detected: <strong>{detected === 'Unknown' ? '不明' : detected}</strong></span>
+        <span className="llm-confidence" style={{ color: confColor }}>
+          ({confPercent}%)
+        </span>
+      </div>
+      <div className="llm-chips">
+        {LLM_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            className={`llm-chip ${selected === opt.value ? 'llm-chip-active' : ''}`}
+            onClick={() => onSelect(opt.value)}
+          >
+            <span className="llm-chip-icon">{opt.icon}</span>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// ANALYZED MESSAGE BLOCK (new algorithm view)
+// ══════════════════════════════════════════════════════════
+function AnalyzedBlock({
+  msg,
+  onRoleToggle,
+  onMergeWithPrev,
+  isFirst,
+}: {
+  msg: AnalyzedMessage;
+  onRoleToggle: (id: number) => void;
+  onMergeWithPrev: (id: number) => void;
+  isFirst: boolean;
+}) {
+  const isUser = msg.role === 'user';
+  const [collapsed, setCollapsed] = useState(false);
+  const confPercent = Math.round(msg.confidence * 100);
+  const confColor = msg.confidence >= 0.8 ? '#22c55e' : msg.confidence >= 0.5 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div
+      id={`block-${msg.id}`}
+      className={`turn-block ${isUser ? 'turn-user' : 'turn-gemini'}`}
+      style={msg.confidence < 0.5 ? { borderLeft: `3px solid ${confColor}` } : undefined}
+    >
+      {/* Role label + tags + actions */}
+      <div className={`turn-label ${isUser ? 'label-user' : 'label-gemini'}`}>
+        {/* Clickable role toggle */}
+        <button
+          className="role-toggle no-print"
+          onClick={() => onRoleToggle(msg.id)}
+          title="クリックでロールを切替 (User ↔ AI)"
+        >
+          {isUser
+            ? <><User size={12} strokeWidth={2.5} /><span>USER</span></>
+            : <><Bot size={12} strokeWidth={2.5} /><span>AI</span></>}
+        </button>
+
+        {/* Confidence badge */}
+        {msg.confidence < 0.8 && (
+          <span className="conf-badge" style={{ color: confColor, borderColor: confColor }}>
+            {confPercent}%
+          </span>
+        )}
+
+        {/* Intent tags */}
+        {msg.intent.length > 0 && (
+          <span className="tag-group">
+            {msg.intent.map(t => (
+              <span key={t} className={`tag tag-intent tag-${t.toLowerCase()}`}>{t}</span>
+            ))}
+          </span>
+        )}
+
+        {/* Topic tags (max 2) */}
+        {msg.topic.length > 0 && (
+          <span className="tag-group">
+            {msg.topic.slice(0, 2).map(t => (
+              <span key={t} className="tag tag-topic">{t}</span>
+            ))}
+          </span>
+        )}
+
+        {/* Block actions */}
+        <span className="block-actions no-print">
+          {!isFirst && (
+            <button
+              className="block-action-btn"
+              onClick={() => onMergeWithPrev(msg.id)}
+              title="前のブロックと結合"
+            >
+              <Merge size={10} strokeWidth={2} />
+            </button>
+          )}
+        </span>
+
+        <button
+          className="collapse-btn no-print"
+          onClick={() => setCollapsed(v => !v)}
+          title={collapsed ? '展開' : '折りたたむ'}
+        >
+          {collapsed ? <ChevronDown size={12} strokeWidth={2} /> : <ChevronUp size={12} strokeWidth={2} />}
+        </button>
+      </div>
+
+      {/* Body */}
+      {!collapsed ? (
+        <div className="turn-content">
+          {isUser ? (
+            <p className="user-question">{msg.text}</p>
+          ) : (
+            <div className="markdown-body">
+              <ContentRenderer content={msg.text} />
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="collapsed-hint no-print" onClick={() => setCollapsed(false)}>
+          クリックして展開…
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
 // MAIN APP
 // ══════════════════════════════════════════════════════════
 export default function App() {
@@ -620,32 +782,126 @@ export default function App() {
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showIndex, setShowIndex] = useState(true);
+  const [useNewAlgo, setUseNewAlgo] = useState(false);
+  const [llmOverride, setLlmOverride] = useState<LLMType | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Reset LLM override when input changes so auto-detection takes effect
+  const prevInputRef = useRef(rawInput);
+  if (rawInput !== prevInputRef.current) {
+    prevInputRef.current = rawInput;
+    if (llmOverride !== null) setLlmOverride(null);
+  }
+
+  // ── Legacy pipeline ──
   const { turns, llm } = useMemo(
     () => rawInput.trim() ? parseChatLog(rawInput) : { turns: [], llm: 'AI' as LLMName },
     [rawInput]
   );
-  const userCount = turns.filter((t: Turn) => t.role === 'user').length;
+
+  // ── New algorithm pipeline ──
+  const analysis: AnalysisResult | null = useMemo(
+    () => useNewAlgo && rawInput.trim() ? analyzeConversation(rawInput) : null,
+    [rawInput, useNewAlgo]
+  );
+
+  // ── Editable messages (for corrections) ──
+  const [editedMessages, setEditedMessages] = useState<AnalyzedMessage[] | null>(null);
+  // When analysis changes (new input), reset edits
+  const analysisRef = useRef(analysis);
+  if (analysis !== analysisRef.current) {
+    analysisRef.current = analysis;
+    setEditedMessages(analysis?.messages ?? null);
+  }
+  // Current messages: edits if available, else analysis
+  const currentMessages = editedMessages ?? analysis?.messages ?? [];
+
+  // ── Role toggle handler ──
+  const handleRoleToggle = useCallback((id: number) => {
+    setEditedMessages(prev => {
+      if (!prev) return prev;
+      return prev.map(m => {
+        if (m.id !== id) return m;
+        const newRole = m.role === 'user' ? 'ai' as const : 'user' as const;
+        // Record correction
+        addRoleCorrection({
+          timestamp: Date.now(),
+          textSnippet: m.text.slice(0, 200),
+          originalRole: m.role,
+          correctedRole: newRole,
+          activeFeatures: [], // features aren't stored on AnalyzedMessage; tracked separately
+          charCount: m.text.length,
+          originalConfidence: m.confidence,
+        });
+        // Recompute weights after recording
+        recomputeWeights();
+        return { ...m, role: newRole, confidence: 1.0 }; // manual = 100% confidence
+      });
+    });
+  }, []);
+
+  // ── Merge with previous block handler ──
+  const handleMergeWithPrev = useCallback((id: number) => {
+    setEditedMessages(prev => {
+      if (!prev) return prev;
+      const idx = prev.findIndex(m => m.id === id);
+      if (idx <= 0) return prev;
+      const target = prev[idx];
+      const prevMsg = prev[idx - 1];
+      const merged: AnalyzedMessage = {
+        ...prevMsg,
+        text: prevMsg.text + '\n\n' + target.text,
+        confidence: Math.min(prevMsg.confidence, target.confidence),
+        intent: [...new Set([...prevMsg.intent, ...target.intent])],
+        topic: [...new Set([...prevMsg.topic, ...target.topic])],
+        artifact: [...new Set([...prevMsg.artifact, ...target.artifact])],
+      };
+      const result = [...prev];
+      result.splice(idx - 1, 2, merged);
+      return result;
+    });
+  }, []);
+
+  // ── Learning stats ──
+  const learningStats = useMemo(() => getStoreStats(), [editedMessages]);
+
+  // ── LLM detection ──
+  const llmDetection = useMemo(
+    () => rawInput.trim() ? detectLLMWithConfidence(rawInput) : { llm: 'Unknown' as LLMType, confidence: 0, scores: {} as Record<LLMType, number> },
+    [rawInput]
+  );
+  const selectedLLM = llmOverride ?? llmDetection.llm;
+
+  const userCount = useNewAlgo && analysis
+    ? analysis.messages.filter(m => m.role === 'user').length
+    : turns.filter((t: Turn) => t.role === 'user').length;
   const tableCount = turns.filter((t: Turn) => t.hasTable).length;
+  const blockCount = useNewAlgo && analysis ? analysis.messages.length : turns.length;
 
   // Auto-named PDF: [LLM]_[YYYYMMDD]_[first question].pdf
   const pdfFilename = useMemo(() => {
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    if (useNewAlgo && analysis) {
+      const firstQ = analysis.messages.find(m => m.role === 'user');
+      const qSlug = firstQ
+        ? firstQ.text.split('\n').find((l: string) => l.trim())?.trim().slice(0, 28).replace(/[\\/:*?"<>|]/g, '') ?? 'archive'
+        : 'archive';
+      return `${selectedLLM}_${date}_${qSlug}.pdf`;
+    }
     const firstQ = turns.find((t: Turn) => t.role === 'user');
     const qSlug = firstQ
       ? firstQ.rawContent.split('\n').find((l: string) => l.trim())?.trim().slice(0, 28).replace(/[\\/:*?"<>|]/g, '') ?? 'archive'
       : 'archive';
     return `${llm}_${date}_${qSlug}.pdf`;
-  }, [turns, llm]);
+  }, [turns, llm, analysis, useNewAlgo, selectedLLM]);
 
   const handleExportPdf = async () => {
     if (!previewRef.current) return;
     setExporting(true);
     try {
       await html2pdf().set({
-        margin: [15, 15, 15, 15],  // 15mm all sides
+        margin: [15, 15, 15, 15],
         filename: pdfFilename,
         image: { type: 'jpeg', quality: 0.99 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#fff', logging: false, windowWidth: 794 },
@@ -664,6 +920,18 @@ export default function App() {
     setTimeout(() => setCopied(false), 2200);
   };
 
+  // ── Export analyzed JSON ──
+  const handleExportJSON = () => {
+    if (!analysis) return;
+    const blob = new Blob([JSON.stringify(analysis, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `analysis_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -679,6 +947,15 @@ export default function App() {
           <span className="stat"><Table size={12} strokeWidth={2} />{tableCount} 表</span>
         </div>
         <div className="header-actions">
+          {/* Algorithm mode toggle */}
+          <button
+            onClick={() => setUseNewAlgo(v => !v)}
+            className={`btn ${useNewAlgo ? 'btn-algo-active' : 'btn-ghost'}`}
+            title={useNewAlgo ? 'アルゴリズムモード ON' : 'レガシーモード'}
+          >
+            <Zap size={14} strokeWidth={2} />
+            {useNewAlgo ? 'Algo' : 'Legacy'}
+          </button>
           <button onClick={() => setShowIndex(v => !v)} className={`btn btn-ghost ${showIndex ? 'btn-active' : ''}`}>
             <List size={14} strokeWidth={2} />目次
           </button>
@@ -691,10 +968,15 @@ export default function App() {
             {copied ? <Check size={14} strokeWidth={2.5} /> : <Clipboard size={14} strokeWidth={2} />}
             {copied ? 'コピー済み' : 'NotebookLM用'}
           </button>
+          {useNewAlgo && analysis && (
+            <button onClick={handleExportJSON} className="btn btn-ghost" title="解析結果をJSONでエクスポート">
+              <Download size={14} strokeWidth={2} />JSON
+            </button>
+          )}
           <button onClick={() => setRawInput('')} disabled={!rawInput} className="btn btn-ghost">
             <Trash2 size={14} strokeWidth={2} />クリア
           </button>
-          <button onClick={handleExportPdf} disabled={exporting || turns.length === 0} className="btn btn-primary">
+          <button onClick={handleExportPdf} disabled={exporting || blockCount === 0} className="btn btn-primary">
             <Download size={15} strokeWidth={2} />
             {exporting ? '生成中…' : 'PDF出力'}
           </button>
@@ -707,6 +989,15 @@ export default function App() {
             <span className="panel-title">入力エリア</span>
             <span className="panel-hint">{rawInput.split('\n').length} 行 · {rawInput.length} 文字</span>
           </div>
+
+          {/* LLM Selector (always visible) */}
+          <LLMSelector
+            detected={llmDetection.llm}
+            selected={selectedLLM}
+            confidence={llmDetection.confidence}
+            onSelect={(llm) => setLlmOverride(llm)}
+          />
+
           <textarea
             className="raw-input"
             value={rawInput}
@@ -719,17 +1010,47 @@ export default function App() {
         <section className="panel panel-right">
           <div className="panel-header">
             <span className="panel-title">プレビュー</span>
-            <span className="panel-hint">{turns.length} ブロック</span>
+            <span className="panel-hint">
+              {blockCount} ブロック
+              {useNewAlgo && analysis && ` · ${analysis.semanticGroups.length} グループ`}
+            </span>
           </div>
           <div className="preview-scroll">
             <div className="preview-page" ref={previewRef}>
-              {turns.length === 0
-                ? <p className="empty-hint">左にGeminiチャットを貼り付けてください。</p>
-                : <>
-                  {showIndex && <TableOfContents turns={turns} />}
-                  {turns.map(t => <TurnBlock key={t.index} turn={t} />)}
-                </>
-              }
+              {/* ── New Algorithm View ── */}
+              {useNewAlgo && analysis ? (
+                currentMessages.length === 0
+                  ? <p className="empty-hint">左にチャットを貼り付けてください。</p>
+                  : <>
+                    {currentMessages.map((msg, idx) => (
+                      <AnalyzedBlock
+                        key={msg.id}
+                        msg={msg}
+                        onRoleToggle={handleRoleToggle}
+                        onMergeWithPrev={handleMergeWithPrev}
+                        isFirst={idx === 0}
+                      />
+                    ))}
+                    {/* Learning stats footer */}
+                    {learningStats.totalCorrections > 0 && (
+                      <div className="learning-stats no-print">
+                        <BookOpen size={12} strokeWidth={2} />
+                        <span>学習済み: {learningStats.roleCorrections}修正 · {learningStats.learnedFeatures}特徴調整</span>
+                        <button className="learning-reset-btn" onClick={() => { clearStore(); setEditedMessages(analysis?.messages ?? null); }} title="学習データをリセット">
+                          <RotateCcw size={10} strokeWidth={2} />リセット
+                        </button>
+                      </div>
+                    )}
+                  </>
+              ) : (
+                /* ── Legacy View ── */
+                turns.length === 0
+                  ? <p className="empty-hint">左にチャットを貼り付けてください。</p>
+                  : <>
+                    {showIndex && <TableOfContents turns={turns} />}
+                    {turns.map(t => <TurnBlock key={t.index} turn={t} />)}
+                  </>
+              )}
             </div>
           </div>
         </section>

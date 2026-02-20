@@ -1,0 +1,101 @@
+﻿
+笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武
+  ALGORITHM EVALUATION REPORT
+笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武
+
+笏笏笏 tc01: Simple Q&A (marked) 笏笏笏
+  Blocks: 5 detected / 2 expected
+  笨・Role Accuracy:  100.0%
+  笶・Boundary Score: 40.0%
+  Overall Score:  76.0%
+
+笏笏笏 tc02: No markers (raw paste) 笏笏笏
+  Blocks: 3 detected / 4 expected
+  笶・Role Accuracy:  25.0%
+  笞・・Boundary Score: 75.0%
+  Overall Score:  45.0%
+    笨・"React縺ｧ迥ｶ諷狗ｮ｡逅・←縺・☆繧九・縺後＞縺・ｼ・.." NOT FOUND in detected blocks
+    笨・"React縺ｧ縺ｮ迥ｶ諷狗ｮ｡逅・↓縺ｯ縺・￥縺､縺九・繧｢繝励Ο繝ｼ繝√′縺ゅｊ縺ｾ縺吶・.." expected=ai got=user
+    笨・"Zustand縺ｮ萓九ｒ隕九○縺ｦ..." expected=user got=ai
+
+笏笏笏 tc03: Error debugging flow 笏笏笏
+  Blocks: 1 detected / 5 expected
+  笶・Role Accuracy:  20.0%
+  笶・Boundary Score: 20.0%
+  Overall Score:  20.0%
+    笨・"npm run build縺励◆繧峨お繝ｩ繝ｼ縺悟・縺・.." expected=user got=ai
+    笨・"error TS2345:..." expected=user got=ai
+    笨・"逶ｴ縺｣縺滂ｼ√≠繧翫′縺ｨ縺・.." NOT FOUND in detected blocks
+    笨・"繧医°縺｣縺溘〒縺呻ｼ・.." NOT FOUND in detected blocks
+
+笏笏笏 tc04: Multi-turn technical 笏笏笏
+  Blocks: 4 detected / 6 expected
+  笶・Role Accuracy:  16.7%
+  笞・・Boundary Score: 66.7%
+  Overall Score:  36.7%
+    笨・"git縺ｧ繝悶Λ繝ｳ繝∵ｶ医☆譁ｹ豕・.." expected=user got=ai
+    笨・"繝ｪ繝｢繝ｼ繝医ヶ繝ｩ繝ｳ繝√ｂ荳邱偵↓豸医○繧具ｼ・.." NOT FOUND in detected blocks
+    笨・"縺ｯ縺・√Μ繝｢繝ｼ繝医ヶ繝ｩ繝ｳ繝√ｂ蜑企勁縺ｧ縺阪∪縺呻ｼ・.." NOT FOUND in detected blocks
+    笨・"蜈ｨ驛ｨ縺ｾ縺ｨ繧√※繧・ｋ繧ｳ繝槭Φ繝峨▲縺ｦ縺ｪ縺・ｼ・.." NOT FOUND in detected blocks
+    笨・"莉･荳九・繝ｯ繝ｳ繝ｩ繧､繝翫・縺ｧ蜃ｦ逅・〒縺阪∪縺呻ｼ・.." NOT FOUND in detected blocks
+
+笏笏笏 tc05: Claude markers 笏笏笏
+  Blocks: 7 detected / 4 expected
+  笞・・Role Accuracy:  75.0%
+  笞・・Boundary Score: 57.1%
+  Overall Score:  67.9%
+    笨・"What about error handling?..." expected=user got=ai
+
+笏笏笏 tc06: ChatGPT markers 笏笏笏
+  Blocks: 4 detected / 2 expected
+  笨・Role Accuracy:  100.0%
+  笞・・Boundary Score: 50.0%
+  Overall Score:  80.0%
+
+笏笏笏 tc07: Mixed language 笏笏笏
+  Blocks: 5 detected / 4 expected
+  笶・Role Accuracy:  25.0%
+  笨・Boundary Score: 80.0%
+  Overall Score:  47.0%
+    笨・"Supabase Auth縺ｮ繧ｻ繝・ヨ繧｢繝・・譁ｹ豕輔ｒ隱ｬ譏弱＠縺ｾ縺吶・.." expected=ai got=user
+    笨・"Google OAuth繧ゆｽｿ縺医ｋ・・.." NOT FOUND in detected blocks
+    笨・"縺ｯ縺・ヾupabase Auth縺ｯGoogle OAuth繧偵し繝昴・繝医＠縺ｦ縺・∪縺吶・.." expected=ai got=user
+
+笏笏笏 tc08: Single long response 笏笏笏
+  Blocks: 6 detected / 2 expected
+  笞・・Role Accuracy:  50.0%
+  笶・Boundary Score: 33.3%
+  Overall Score:  43.3%
+    笨・"Flexbox縺ｨCSS Grid縺ｯ縺ｩ縺｡繧峨ｂ蠑ｷ蜉帙↑繝ｬ繧､繧｢繧ｦ繝医す繧ｹ繝・Β縺ｧ縺吶′縲・.." expected=ai got=user
+
+笏笏笏 tc09: Error log paste 笏笏笏
+  Blocks: 2 detected / 3 expected
+  笶・Role Accuracy:  33.3%
+  笞・・Boundary Score: 66.7%
+  Overall Score:  46.7%
+    笨・"縺薙ｌ縺悟・縺・.." expected=user got=ai
+    笨・"TypeError: Cannot read properties..." expected=user got=ai
+
+笏笏笏 tc10: Rapid-fire Q&A 笏笏笏
+  Blocks: 3 detected / 8 expected
+  笶・Role Accuracy:  12.5%
+  笶・Boundary Score: 37.5%
+  Overall Score:  22.5%
+    笨・"npm縺ｨyarn縺ｩ縺｣縺｡縺後＞縺・ｼ・.." NOT FOUND in detected blocks
+    笨・"縺ｩ縺｡繧峨ｂ蜆ｪ繧後◆繝代ャ繧ｱ繝ｼ繧ｸ繝槭ロ繝ｼ繧ｸ繝｣繝ｼ縺ｧ縺吶′..." expected=ai got=user
+    笨・"pnpm縺ｯ・・.." NOT FOUND in detected blocks
+    笨・"pnpm縺ｯ髱槫ｸｸ縺ｫ蜆ｪ遘縺ｪ驕ｸ謚櫁い縺ｧ縺吶・.." expected=ai got=user
+    笨・"Bun縺ｯ・・.." NOT FOUND in detected blocks
+    笨・"Bun縺ｯ譁ｰ縺励＞JavaScript繝ｩ繝ｳ繧ｿ繧､繝蜈ｼ繝代ャ繧ｱ繝ｼ繧ｸ繝槭ロ繝ｼ繧ｸ繝｣繝ｼ縺ｧ縺吶・.." expected=ai got=user
+    笨・"濶ｯ縺・∈謚槭〒縺呻ｼ｝npm繧剃ｽｿ縺・ｧ九ａ繧九↓縺ｯ・・.." NOT FOUND in detected blocks
+
+笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武
+  SUMMARY
+笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武
+  Test Cases:      10
+  Avg Role Acc:    45.8%
+  Avg Boundary:    52.6%
+  Avg Overall:     48.5%
+  Passing (竕･70%):  2/10
+笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武笊絶武
+
