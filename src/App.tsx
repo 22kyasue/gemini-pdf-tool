@@ -47,6 +47,9 @@ const JUNK_EXACT = new Set([
   'Good response', 'Bad response', 'Share', 'Report', 'Retry',
   'もう一度生成', '音声で聞く', '編集', 'Edit message', 'Regenerate',
   'Show more', 'Show less', '回答を評価', '回答を共有',
+  // ChatGPT-specific junk
+  'Like', 'Dislike', 'Memory updated', 'Memory updated.',
+  'Read aloud', 'Search the web', 'Create image',
 ]);
 
 // Junk that can appear ANYWHERE mid-block (YouTube stubs, bare URLs, cite tags)
@@ -58,6 +61,10 @@ const INLINE_JUNK_LINE_RE: RegExp[] = [
   /Are So Expensive/i,
   /^\s*(Business Insider|Forbes|Bloomberg|TechCrunch|Wired)\s*[·•\-–]/i,
   /^\s*\[\d+\]\s*\S/,
+  // ChatGPT noise
+  /^Thought for \d+ seconds?$/i,
+  /^Searched \d+ sites?$/i,
+  /^Analyzing/i,
 ];
 
 function removeJunk(text: string): string {
@@ -308,6 +315,8 @@ const USER_MARKERS: RegExp[] = [
   /^自分$/,
   /^Human$/i,
   /^Me$/i,
+  // ChatGPT "X said:" format
+  /^You said:?$/i,
 ];
 
 // --- Assistant-side markers ---
@@ -321,16 +330,21 @@ const ASSISTANT_MARKERS: RegExp[] = [
   /^Gemini\s+\d+(\.\d+)?/,
   // ChatGPT variants
   /^ChatGPT$/i,
+  /^ChatGPT said:?$/i,        // ← key ChatGPT copy format
   /^GPT-?[3-9]/i,
-  /^o[13]-?mini/i,      // OpenAI o1/o3
+  /^o[13]-?mini/i,
   /^OpenAI$/i,
   // Claude variants
   /^Claude$/i,
+  /^Claude said:?$/i,          // Claude web copy
   /^Claude\s+[0-9]/i,
   /^Anthropic$/i,
+  // Gemini said format
+  /^Gemini said:?$/i,
   // Generic
   /^Assistant$/i,
   /^AI$/i,
+  /^AI said:?$/i,
 ];
 
 // --- Detect which LLM service is being pasted ---
@@ -343,7 +357,7 @@ function detectLLM(raw: string): LLMName {
 
 // --- Extract LLM label from a specific marker line ---
 function labelFromLine(line: string): string {
-  const t = line.trim();
+  const t = line.trim().replace(/:$/, '');  // strip trailing colon
   if (/Claude/i.test(t)) return 'Claude';
   if (/ChatGPT|GPT-?[3-9]|OpenAI|o[13]-?mini/i.test(t)) return 'ChatGPT';
   if (/Gemini/i.test(t)) return 'Gemini';
@@ -482,13 +496,13 @@ function TableOfContents({ turns }: { turns: Turn[] }) {
 
   return (
     <div className="toc-block">
-      <div className="toc-header"><List size={13} /><span>小見出し・インデックス</span></div>
+      <div className="toc-header"><List size={14} strokeWidth={2} /><span>目次・インデックス</span></div>
       <ol className="toc-list">
         {pairs.map(({ user, assistant }) => (
           <li key={user.index}>
             <a href={`#turn-${user.index}`} className="toc-link">
               <span className="toc-q">{user.summary}</span>
-              {assistant?.hasTable && <span className="toc-badge"><Table size={9} />表あり</span>}
+              {assistant?.hasTable && <span className="toc-badge"><Table size={10} strokeWidth={2} />表あり</span>}
             </a>
           </li>
         ))}
@@ -510,15 +524,15 @@ function TurnBlock({ turn }: { turn: Turn }) {
       {/* Role label + collapse toggle */}
       <div className={`turn-label ${isUser ? 'label-user' : 'label-gemini'}`}>
         {isUser
-          ? <><User size={11} /><span>USER</span></>
-          : <><Bot size={11} /><span>{turn.llmLabel}</span></>}
+          ? <><User size={12} strokeWidth={2.5} /><span>USER</span></>
+          : <><Bot size={12} strokeWidth={2.5} /><span>{turn.llmLabel}</span></>}
         {!isUser && (
           <button
             className="collapse-btn no-print"
             onClick={() => setCollapsed(v => !v)}
             title={collapsed ? '展開' : '折りたたむ'}
           >
-            {collapsed ? <ChevronDown size={11} /> : <ChevronUp size={11} />}
+            {collapsed ? <ChevronDown size={12} strokeWidth={2} /> : <ChevronUp size={12} strokeWidth={2} />}
           </button>
         )}
       </div>
@@ -654,19 +668,19 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="header-brand">
-          <FileText size={18} />
+          <FileText size={20} strokeWidth={2} />
           <div>
-            <strong>Gemini 対話アーカイブ</strong>
-            <span className="header-sub">Intelligent Archive &amp; PDF Exporter</span>
+            <strong>LLM 対話アーカイブ</strong>
+            <span className="header-sub">Universal Chat Archive & PDF Exporter</span>
           </div>
         </div>
         <div className="header-stats">
-          <span className="stat"><User size={11} />{userCount}問</span>
-          <span className="stat"><Table size={11} />{tableCount}表</span>
+          <span className="stat"><User size={12} strokeWidth={2} />{userCount} 問</span>
+          <span className="stat"><Table size={12} strokeWidth={2} />{tableCount} 表</span>
         </div>
         <div className="header-actions">
           <button onClick={() => setShowIndex(v => !v)} className={`btn btn-ghost ${showIndex ? 'btn-active' : ''}`}>
-            <List size={13} />目次
+            <List size={14} strokeWidth={2} />目次
           </button>
           <button
             onClick={handleCopyNotebookLM}
@@ -674,14 +688,14 @@ export default function App() {
             className={`btn ${copied ? 'btn-copied' : 'btn-nb'}`}
             title="NotebookLM向けにクレンジングしたMarkdownをコピー"
           >
-            {copied ? <Check size={13} /> : <Clipboard size={13} />}
-            {copied ? 'コピー済み！' : 'NotebookLM用'}
+            {copied ? <Check size={14} strokeWidth={2.5} /> : <Clipboard size={14} strokeWidth={2} />}
+            {copied ? 'コピー済み' : 'NotebookLM用'}
           </button>
           <button onClick={() => setRawInput('')} disabled={!rawInput} className="btn btn-ghost">
-            <Trash2 size={13} />クリア
+            <Trash2 size={14} strokeWidth={2} />クリア
           </button>
           <button onClick={handleExportPdf} disabled={exporting || turns.length === 0} className="btn btn-primary">
-            <Download size={14} />
+            <Download size={15} strokeWidth={2} />
             {exporting ? '生成中…' : 'PDF出力'}
           </button>
         </div>
@@ -690,22 +704,22 @@ export default function App() {
       <main className="app-main">
         <section className="panel panel-left">
           <div className="panel-header">
-            <span className="panel-title">Geminiチャットを貼り付け</span>
-            <span className="panel-hint">{rawInput.split('\n').length}行 / {rawInput.length}文字</span>
+            <span className="panel-title">入力エリア</span>
+            <span className="panel-hint">{rawInput.split('\n').length} 行 · {rawInput.length} 文字</span>
           </div>
           <textarea
             className="raw-input"
             value={rawInput}
             onChange={e => setRawInput(e.target.value)}
-            placeholder="GeminiのチャットページでCtrl+A → Ctrl+C → ここにCtrl+V"
+            placeholder="Gemini / ChatGPT / Claude のチャットをここに貼り付け&#10;&#10;Ctrl+A → Ctrl+C → Ctrl+V"
             spellCheck={false}
           />
         </section>
 
         <section className="panel panel-right">
           <div className="panel-header">
-            <span className="panel-title">プレビュー（PDF出力内容）</span>
-            <span className="panel-hint">{turns.length}ブロック検出</span>
+            <span className="panel-title">プレビュー</span>
+            <span className="panel-hint">{turns.length} ブロック</span>
           </div>
           <div className="preview-scroll">
             <div className="preview-page" ref={previewRef}>
