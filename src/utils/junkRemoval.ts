@@ -63,8 +63,8 @@ const INVITATION_RE: RegExp[] = [
     /ご質問があれば/,
     /お気軽に(お申し|ご連絡|ご質問)/,
     /動画では.{0,30}解説されています/,
-    // Broad ？-ending invitation sentences
-    /^.{0,60}[？?]$/,
+    // Short invitation question (≤30 chars) ending with ？ — longer ones may be legitimate content
+    /^.{0,30}[？?]$/,
     // Media stub lines
     /YouTube/i,
     /Business Insider/i,

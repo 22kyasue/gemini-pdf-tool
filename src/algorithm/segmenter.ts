@@ -44,7 +44,7 @@ const URL_ONLY_RE = /^\s*https?:\/\/\S+\s*$/;
 const COMMAND_RE = /^\s*(npm|npx|git|cd|brew|pip|yarn|pnpm|sudo|curl|wget|docker|kubectl|make|cmake)\s/;
 
 /** File path line */
-const FILE_PATH_RE = /^\s*([A-Z]:\\|\/Users\/|~\/|\.\/|\.\.\/)\\S+/;
+const FILE_PATH_RE = /^\s*([A-Z]:\\|\/Users\/|~\/|\.\/|\.\.\/)[\S]+/;
 
 /** Question-only line (short line ending with ？ or ?) */
 const QUESTION_ONLY_RE = /^.{1,80}[？?]\s*$/;
@@ -58,17 +58,8 @@ function hasStructuralContent(lines: string[]): boolean {
     });
 }
 
-/** Check if text is likely a short user message */
-function isShortUserLike(text: string): boolean {
-    const t = text.trim();
-    return t.length < 80 && (
-        QUESTION_ONLY_RE.test(t) ||
-        /[して作って直して教えて見せてやって出して消して]$/.test(t) ||
-        t.length < 30
-    );
-}
 
-// ── B-3: Merge rules (fix over-segmentation) ────────────
+// ── B-2: Soft boundaries (conditional split) ────────────
 
 /** Line ending with a particle/comma/colon (sentence is incomplete) */
 const INCOMPLETE_LINE_RE = /[、，,：:は|が|を|に|で|と|も|の|へ|から|まで|より]\s*$/;

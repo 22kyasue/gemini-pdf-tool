@@ -33,6 +33,7 @@ export function buildNotebookLMMarkdown(turns: Turn[]): string {
                 const fmt = (r: string[]) => '| ' + r.join(' | ') + ' |';
                 return [fmt(rows[0]), fmt(sep), ...rows.slice(1).map(fmt)].join('\n');
             })
+            .replace(/<strong>(.*?)<\/strong>/gi, '**$1**') // restore bold markdown
             .replace(/<[^>]+>/g, ''); // strip any remaining HTML
         return `${label}\n\n${body.trim()}`;
     }).join('\n\n---\n\n');

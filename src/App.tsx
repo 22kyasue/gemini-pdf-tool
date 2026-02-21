@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { FileText, Download, Trash2, User, Table, Clipboard, Check, Zap, List, BookOpen, RotateCcw, Undo2, Redo2 } from 'lucide-react';
 
 // ── Types ──
@@ -87,6 +87,7 @@ export default function App() {
     setTimeout(() => setParseErrorToast(false), 2500);
   }, []);
   const previewRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   // Wire toast callback into the module-level ref so ContentRenderer can call it
   _onRenderError.current = showParseError;
 
@@ -96,6 +97,23 @@ export default function App() {
     prevInputRef.current = rawInput;
     if (llmOverride !== null) setLlmOverride(null);
   }
+
+  // Enhancement: Ctrl+Z / Ctrl+Y keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Only when focus is NOT inside the textarea (textarea has native undo)
+      if ((e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo, redo]);
 
   // ── Legacy pipeline ──
   const { turns, llm } = useMemo(
@@ -118,6 +136,9 @@ export default function App() {
   }
   const currentMessages = editedMessages ?? analysis?.messages ?? [];
 
+  // ── Learning stats tick — incremented after each correction to re-read localStorage ──
+  const [learningStatsTick, setLearningStatsTick] = useState(0);
+
   // ── Role toggle handler ──
   const handleRoleToggle = useCallback((id: number) => {
     setEditedMessages(prev => {
@@ -138,6 +159,7 @@ export default function App() {
         return { ...m, role: newRole, confidence: 1.0 };
       });
     });
+    setLearningStatsTick(n => n + 1);
   }, []);
 
   // ── Merge with previous block handler ──
@@ -162,8 +184,9 @@ export default function App() {
     });
   }, []);
 
-  // ── Learning stats ──
-  const learningStats = useMemo(() => getStoreStats(), [editedMessages]);
+  // ── Learning stats — re-read from localStorage after corrections ──
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const learningStats = useMemo(() => getStoreStats(), [learningStatsTick]);
 
   // ── LLM detection ──
   const llmDetection = useMemo(
@@ -177,7 +200,9 @@ export default function App() {
   const userCount = useNewAlgo && analysis
     ? analysis.messages.filter(m => m.role === 'user').length
     : turns.filter((t: Turn) => t.role === 'user').length;
-  const tableCount = turns.filter((t: Turn) => t.hasTable).length;
+  const tableCount = useNewAlgo && analysis
+    ? analysis.messages.filter(m => m.role === 'ai' && (/\|.*\|/.test(m.text) || /<table/i.test(m.text))).length
+    : turns.filter((t: Turn) => t.hasTable).length;
   const blockCount = useNewAlgo && analysis ? analysis.messages.length : turns.length;
 
   // ── PDF filename ──
@@ -205,7 +230,7 @@ export default function App() {
     setExporting(true);
     try {
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      await exportToPdf(previewRef.current, pdfFilename);
+      await exportToPdf(previewRef.current, pdfFilename, scrollRef.current);
     } finally {
       setExporting(false);
       setIsPdfExporting(false);
@@ -336,7 +361,7 @@ export default function App() {
               {useNewAlgo && analysis && ` · ${analysis.semanticGroups.length} グループ`}
             </span>
           </div>
-          <div className="preview-scroll">
+          <div className="preview-scroll" ref={scrollRef}>
             <div className="preview-page" ref={previewRef}>
               {/* ── New Algorithm View ── */}
               {useNewAlgo && analysis ? (
@@ -350,6 +375,7 @@ export default function App() {
                         onRoleToggle={handleRoleToggle}
                         onMergeWithPrev={handleMergeWithPrev}
                         isFirst={idx === 0}
+                        forceExpand={isPdfExporting}
                       />
                     ))}
                     {learningStats.totalCorrections > 0 && (

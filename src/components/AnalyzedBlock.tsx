@@ -13,11 +13,13 @@ export function AnalyzedBlock({
     onRoleToggle,
     onMergeWithPrev,
     isFirst,
+    forceExpand = false,
 }: {
     msg: AnalyzedMessage;
     onRoleToggle: (id: number) => void;
     onMergeWithPrev: (id: number) => void;
     isFirst: boolean;
+    forceExpand?: boolean;
 }) {
     const isUser = msg.role === 'user';
     const [collapsed, setCollapsed] = useState(false);
@@ -86,7 +88,7 @@ export function AnalyzedBlock({
             </div>
 
             {/* Body */}
-            {!collapsed ? (
+            {(!collapsed || forceExpand) ? (
                 <div className="turn-content">
                     {isUser ? (
                         <p className="user-question">{msg.text}</p>

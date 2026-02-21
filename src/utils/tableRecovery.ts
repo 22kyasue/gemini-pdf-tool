@@ -139,7 +139,6 @@ export function normalizeBold(text: string): string {
     // ``` fences are kept verbatim; inline `code` is preserved by
     // the replacement function below.
     const tokens: { raw: string; isCode: boolean }[] = [];
-    let remaining = text;
     const FENCE_RE = /```[\s\S]*?```/g;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
