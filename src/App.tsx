@@ -2,8 +2,9 @@ import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
   FileText, Download, User, Table, Zap,
   List, BookOpen, GraduationCap, Briefcase,
-  Layout, Plus, Trash, RotateCw
+  Layout, Plus, Trash, RotateCw, Settings, X
 } from 'lucide-react';
+import { generateNarrativeTOCWithGemini } from './utils/llmParser';
 
 // -- Types --
 import type { LLMName } from './types';
@@ -71,6 +72,25 @@ export default function App() {
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [parseErrorToast, setParseErrorToast] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('geminiApiKey') || '');
+  const [cerebrasApiKey, setCerebrasApiKey] = useState(() => localStorage.getItem('cerebrasApiKey') || '');
+  const [anthropicApiKey, setAnthropicApiKey] = useState(() => localStorage.getItem('anthropicApiKey') || '');
+
+  const handleSaveApiKey = (val: string) => {
+    setApiKey(val);
+    localStorage.setItem('geminiApiKey', val);
+  };
+
+  const handleSaveCerebrasApiKey = (val: string) => {
+    setCerebrasApiKey(val);
+    localStorage.setItem('cerebrasApiKey', val);
+  };
+
+  const handleSaveAnthropicApiKey = (val: string) => {
+    setAnthropicApiKey(val);
+    localStorage.setItem('anthropicApiKey', val);
+  };
 
   const activeSource = sources.find(s => s.id === activeSourceId) || sources[0];
 
@@ -126,11 +146,23 @@ export default function App() {
 
   const [editedMessages, setEditedMessages] = useState<AnalyzedMessage[] | null>(null);
   const [editedGroups, setEditedGroups] = useState<SemanticGroup[] | null>(null);
+  const [narrativeTOC, setNarrativeTOC] = useState<string | null>(null);
 
   useEffect(() => {
     if (analysis) {
       setEditedMessages(analysis.messages);
       setEditedGroups(analysis.semanticGroups);
+
+      // Generate Narrative TOC
+      const outline = analysis.semanticGroups.map(g => {
+        const firstMsg = analysis.messages[g.span[0]];
+        const topics = Object.keys(g.summaryStats.topics).join(', ');
+        return `Segment ${g.id + 1} (Topics: ${topics}): ${firstMsg.text.slice(0, 100)}...`;
+      }).join('\n');
+
+      generateNarrativeTOCWithGemini(outline).then(res => {
+        if (res) setNarrativeTOC(res);
+      });
     }
   }, [analysis]);
 
@@ -140,6 +172,10 @@ export default function App() {
 
   const handleUpdateGroupSummary = useCallback((id: number, summary: string) => {
     setEditedGroups(prev => prev ? prev.map(g => g.id === id ? { ...g, customSummary: summary } : g) : null);
+  }, []);
+
+  const handleUpdateMessageText = useCallback((id: number, text: string) => {
+    setEditedMessages(prev => prev ? prev.map(m => m.id === id ? { ...m, text } : m) : null);
   }, []);
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -155,7 +191,7 @@ export default function App() {
   };
 
   const currentMessages = editedMessages ?? analysis?.messages ?? [];
-  const [learningStatsTick, setLearningStatsTick] = useState(0);
+  const learningStats = getStoreStats();
 
   const handleRoleToggle = useCallback((id: number) => {
     setEditedMessages(prev => {
@@ -176,7 +212,6 @@ export default function App() {
         return { ...m, role: newRole, confidence: 1.0 };
       });
     });
-    setLearningStatsTick(n => n + 1);
   }, []);
 
   const handleMergeWithPrev = useCallback((id: number) => {
@@ -190,9 +225,9 @@ export default function App() {
         ...prevMsg,
         text: prevMsg.text + '\n\n' + target.text,
         confidence: Math.min(prevMsg.confidence, target.confidence),
-        intent: [...new Set([...prevMsg.intent, ...target.intent])],
-        topic: [...new Set([...prevMsg.topic, ...target.topic])],
-        artifact: [...new Set([...prevMsg.artifact, ...target.artifact])]
+        intent: Array.from(new Set([...prevMsg.intent, ...target.intent])),
+        topic: Array.from(new Set([...prevMsg.topic, ...target.topic])),
+        artifact: Array.from(new Set([...prevMsg.artifact, ...target.artifact]))
       };
       const result = [...prev];
       result.splice(idx - 1, 2, merged);
@@ -200,56 +235,36 @@ export default function App() {
     });
   }, []);
 
-  const handleUpdateMessageText = useCallback((id: number, text: string) => {
-    setEditedMessages(prev => prev ? prev.map(m => m.id === id ? { ...m, text } : m) : null);
-  }, []);
-
-  const learningStats = useMemo(() => getStoreStats(), [learningStatsTick]);
-
-  const activeLLMDetection = useMemo(() => activeSource.content.trim()
-    ? detectLLMWithConfidence(activeSource.content)
-    : { llm: 'Unknown' as LLMType, confidence: 0, scores: {} as any },
-    [activeSource.content]
-  );
-
-  const selectedLLM = llmOverride ?? activeLLMDetection.llm;
-
-  const stats = useMemo(() => {
-    const msgs = useNewAlgo && analysis ? analysis.messages : turns;
-    return {
-      user: msgs.filter((m: any) => m.role === 'user').length,
-      tables: msgs.filter((m: any) => (m.role === 'ai' || m.role === 'assistant') && (/\|/.test(m.text || m.rawContent) || /<table/i.test(m.text || m.rawContent))).length,
-      blocks: msgs.length
-    };
-  }, [useNewAlgo, analysis, turns]);
+  const activeLLMDetection = useMemo(() => detectLLMWithConfidence(activeSource.content), [activeSource.content]);
+  const selectedLLM = llmOverride || activeLLMDetection.llm;
 
   const handleExportPdf = async () => {
-    if (!previewRef.current) return;
-    setIsPdfExporting(true);
     setExporting(true);
+    setIsPdfExporting(true);
+    await new Promise(r => setTimeout(r, 800)); // wait for layout
     try {
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      await exportToPdf(previewRef.current, 'Synthesis_Archive.pdf', scrollRef.current);
+      if (previewRef.current) {
+        await exportToPdf(previewRef.current, activeSource.title, scrollRef.current);
+      }
     } finally {
-      setExporting(false);
       setIsPdfExporting(false);
+      setExporting(false);
     }
   };
 
   return (
-    <div className="app-shell">
+    <div className="app-container">
       <header className="app-header">
-        <div className="header-brand">
-          <FileText size={20} />
-          <div>
-            <strong>LLM Synthesis Tool</strong>
-            <span className="header-sub">Unified Multi-Log Studio</span>
-          </div>
+        <div className="brand">
+          <div className="brand-logo"><FileText size={20} /></div>
+          <div className="brand-text">GEMINI PDF TOOL <span className="beta-tag">PRO</span></div>
         </div>
-        <div className="header-stats">
-          <span className="stat"><User size={12} />{stats.user} msgs</span>
-          <span className="stat"><Table size={12} />{stats.tables} tables</span>
+
+        <div className="header-stats no-print">
+          <div className="stat-item"><User size={12} /><span>{currentMessages.filter(m => m.role === 'user').length}</span></div>
+          <div className="stat-item"><Table size={12} /><span>{currentMessages.filter(m => m.artifact.includes('TABLE')).length}</span></div>
         </div>
+
         <div className="header-actions">
           <button onClick={() => setUseNewAlgo(!useNewAlgo)} className={`btn ${useNewAlgo ? 'btn-algo-active' : 'btn-ghost'}`}>
             <Zap size={14} /> {useNewAlgo ? 'Algo' : 'Legacy'}
@@ -262,6 +277,9 @@ export default function App() {
             <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`}><GraduationCap size={14} /></button>
             <button onClick={() => setPdfTemplate('executive')} className={`template-btn ${pdfTemplate === 'executive' ? 'active' : ''}`}><Briefcase size={14} /></button>
           </div>
+          <button onClick={() => setShowSettings(true)} className="btn btn-ghost no-print" title="Settings">
+            <Settings size={15} />
+          </button>
           <button onClick={handleExportPdf} disabled={exporting} className="btn btn-primary">
             <Download size={15} /> {exporting ? 'Generating...' : 'PDF'}
           </button>
@@ -276,16 +294,15 @@ export default function App() {
               <Plus size={14} />
             </button>
           </div>
-          <div className="source-list">
+          <div className="sources-list">
             {sources.map(s => (
               <div
                 key={s.id}
-                className={`source-item ${activeSourceId === s.id ? 'active' : ''}`}
+                className={`source-card ${s.id === activeSourceId ? 'active' : ''}`}
                 onClick={() => setActiveSourceId(s.id)}
               >
-                <div className="source-header">
+                <div className="source-info">
                   <input
-                    type="text"
                     className="source-title-input"
                     value={s.title}
                     onChange={(e) => handleUpdateTitle(s.id, e.target.value)}
@@ -330,7 +347,13 @@ export default function App() {
             <div className={`preview-page theme-${pdfTemplate}`} ref={previewRef}>
               <PdfPrintHeader llm={selectedLLM} />
               <div className="pdf-toc-container">
-                {useNewAlgo && analysis && <TableOfContents analysis={analysis} isPdfMode={true} />}
+                {useNewAlgo && analysis && (
+                  <TableOfContents
+                    analysis={analysis}
+                    isPdfMode={true}
+                    narrative={narrativeTOC || undefined}
+                  />
+                )}
               </div>
 
               {useNewAlgo && analysis ? (
@@ -342,7 +365,13 @@ export default function App() {
                         const displayGroup = group ? (editedGroups?.find(eg => eg.id === group.id) || group) : null;
                         return (
                           <div key={m.id}>
-                            {displayGroup && <ChapterDivider group={displayGroup} onUpdateSummary={handleUpdateGroupSummary} />}
+                            {displayGroup && (
+                              <ChapterDivider
+                                group={displayGroup}
+                                onUpdateSummary={handleUpdateGroupSummary}
+                                sectionText={currentMessages.slice(displayGroup.span[0], displayGroup.span[1] + 1).map(msg => msg.text).join('\n\n')}
+                              />
+                            )}
                             <SortableAnalyzedBlock
                               msg={m}
                               onRoleToggle={handleRoleToggle}
@@ -376,6 +405,63 @@ export default function App() {
       </main>
 
       {parseErrorToast && <div className="toast-error no-print">⚠ Error</div>}
+
+      {showSettings && (
+        <div className="modal-overlay no-print" onClick={() => setShowSettings(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>System Settings</h3>
+              <button className="btn-close" onClick={() => setShowSettings(false)}><X size={18} /></button>
+            </div>
+            <div className="settings-body">
+              <div className="setting-group">
+                <label>Gemini API Key</label>
+                <div className="api-key-input-wrapper">
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => handleSaveApiKey(e.target.value)}
+                    placeholder="Enter your Gemini API Key..."
+                  />
+                  <div className="api-badge">gemini-2.0-flash</div>
+                </div>
+                <p className="setting-hint">Used for Smart Table Recovery and advanced content analysis. Key is stored locally in your browser.</p>
+              </div>
+
+              <div className="setting-group">
+                <label>Fallback API Key (Cerebras/Groq)</label>
+                <div className="api-key-input-wrapper">
+                  <input
+                    type="password"
+                    value={cerebrasApiKey}
+                    onChange={(e) => handleSaveCerebrasApiKey(e.target.value)}
+                    placeholder="Enter secondary API key..."
+                  />
+                  <div className="api-badge secondary-badge">llama-3.1-8b</div>
+                </div>
+                <p className="setting-hint">Used as a high-speed fallback when Gemini hits rate limits (15 RPM). Supports OpenAI-compatible APIs.</p>
+              </div>
+
+              <div className="setting-group">
+                <label>Anthropic API Key (Claude)</label>
+                <div className="api-key-input-wrapper">
+                  <input
+                    type="password"
+                    value={anthropicApiKey}
+                    onChange={(e) => handleSaveAnthropicApiKey(e.target.value)}
+                    placeholder="Enter Anthropic key..."
+                  />
+                  <div className="api-badge anthropic-badge">claude-3-haiku</div>
+                </div>
+                <p className="setting-hint">Used for high-precision Table Recovery. Best for complex logic and layout reconstruction.</p>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setShowSettings(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

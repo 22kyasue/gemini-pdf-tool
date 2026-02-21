@@ -1,21 +1,23 @@
-import { List, Table, Zap } from 'lucide-react';
+import { List, Table, Zap, Search } from 'lucide-react';
 import type { Turn } from '../types';
 import type { AnalyzedMessage, SemanticGroup } from '../algorithm/types';
 
 // ══════════════════════════════════════════════════════════
 // TABLE OF CONTENTS
 // Intelligent TOC with [表あり] badges.
-// Supports both Legacy (Turns) and New Algo (Semantic Groups).
+// Supports Narrative Flow (LLM) and detailed indexing.
 // ══════════════════════════════════════════════════════════
 
 export function TableOfContents({
     turns,
     analysis,
-    isPdfMode = false
+    isPdfMode = false,
+    narrative
 }: {
     turns?: Turn[];
     analysis?: { messages: AnalyzedMessage[]; semanticGroups: SemanticGroup[] };
     isPdfMode?: boolean;
+    narrative?: string;
 }) {
     const containerClass = `toc-block ${isPdfMode ? 'pdf-only-toc' : 'no-print'}`;
     // ── New Algorithm Mode ──
@@ -26,6 +28,16 @@ export function TableOfContents({
                     <Zap size={14} strokeWidth={2.5} className="text-indigo-500" />
                     <span>AI セマンティック目次</span>
                 </div>
+
+                {narrative && (
+                    <div className="narrative-toc">
+                        <div className="narrative-header">
+                            <Search size={12} className="text-indigo-400" />
+                            <span>RESEARCH FLOW</span>
+                        </div>
+                        <p className="narrative-text">{narrative}</p>
+                    </div>
+                )}
                 <div className="toc-groups">
                     {analysis.semanticGroups.map(group => {
                         const firstMsg = analysis.messages[group.span[0]];

@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import { Copy, Check, Sparkles } from 'lucide-react';
 import { ErrorBoundary, _onRenderError } from './ErrorBoundary';
 import { Mermaid } from './Mermaid';
 import { CitationBadge } from './CitationBadge';
@@ -8,36 +10,68 @@ import { CitationBadge } from './CitationBadge';
 // ══════════════════════════════════════════════════════════
 // CONTENT RENDERER
 // Mixed MD + HTML table renderer + Mermaid support.
-// Uses rehype-raw so <strong> and smart-table HTML pass through.
+// Upgraded Phase 4: Task-Based Hybrid Routing Badges.
 // ══════════════════════════════════════════════════════════
+
+/**
+ * Copy Button Component for Code Blocks
+ */
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+        }
+    };
+
+    return (
+        <button
+            onClick={handleCopy}
+            className={`copy-btn no-print ${copied ? 'copied' : ''}`}
+            title="Copy Code"
+        >
+            {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} />}
+            <span>{copied ? 'Copied!' : 'Copy'}</span>
+        </button>
+    );
+}
 
 /**
  * Sanitizes markdown content to prevent unexpected layout blowup.
  */
 function sanitizeContent(md: string): string {
     let sanitized = md;
-
-    // Headings are now handled safely by CSS word-break and max-width.
-    // Bracketing them (e.g. [##]) looked unprofessional to users.
-
-    // 1. Escape raw HTML heading tags (<h1> through <h6>).
-    // Fixes #003: "<h1>" -> "&lt;h1&gt;"
+    // Remove Claude markers from markdown flow
+    sanitized = sanitized.replace('<!-- cl-restored -->', '');
     sanitized = sanitized.replace(/<(h[1-6])(?:\s[^>]*)?>/gi, '&lt;$1&gt;');
     sanitized = sanitized.replace(/<\/(h[1-6])>/gi, '&lt;/$1&gt;');
-
     return sanitized;
 }
 
 export function ContentRenderer({ content }: { content: string }) {
     const TABLE_RE = /(<table[\s\S]*?<\/table>)/;
+    const isClaudeRestored = content.includes('<!-- cl-restored -->');
     const handleError = () => _onRenderError.current?.();
 
     return (
         <ErrorBoundary onError={handleError}>
-            <>
+            <div className="content-render-pass">
                 {content.split(TABLE_RE).map((part, i) =>
                     part.startsWith('<table') ? (
-                        <div key={i} className="smart-table-wrap" dangerouslySetInnerHTML={{ __html: part }} />
+                        <div key={i} className="relative group">
+                            {isClaudeRestored && (
+                                <div className="claude-badge no-print">
+                                    <Sparkles size={10} className="text-amber-400" />
+                                    <span>Restored by Claude</span>
+                                </div>
+                            )}
+                            <div className="smart-table-wrap" dangerouslySetInnerHTML={{ __html: part }} />
+                        </div>
                     ) : part.trim() ? (
                         <ErrorBoundary key={i} onError={handleError}>
                             <ReactMarkdown
@@ -50,14 +84,31 @@ export function ContentRenderer({ content }: { content: string }) {
                                         }
                                         return <sup className={className} {...props}>{children}</sup>;
                                     },
-                                    code({ node, className, children, ...props }) {
+                                    code({ node, inline, className, children, ...props }: any) {
                                         const match = /language-(\w+)/.exec(className || '');
                                         const isMermaid = match && match[1] === 'mermaid';
+
                                         if (isMermaid) {
                                             return <Mermaid chart={String(children).replace(/\n$/, '')} />;
                                         }
+
+                                        // Block Code Rendering
+                                        if (!inline) {
+                                            return (
+                                                <div className="code-block-container group relative my-4">
+                                                    <CopyButton text={String(children).replace(/\n$/, '')} />
+                                                    <pre className="code-pre">
+                                                        <code className={className} {...props}>
+                                                            {children}
+                                                        </code>
+                                                    </pre>
+                                                </div>
+                                            );
+                                        }
+
+                                        // Inline Code Rendering
                                         return (
-                                            <code className={className} {...props}>
+                                            <code className="inline-code" {...props}>
                                                 {children}
                                             </code>
                                         );
@@ -69,7 +120,7 @@ export function ContentRenderer({ content }: { content: string }) {
                         </ErrorBoundary>
                     ) : null
                 )}
-            </>
+            </div>
         </ErrorBoundary>
     );
 }

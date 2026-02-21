@@ -1,22 +1,43 @@
-import { useState } from 'react';
-import { Zap, Edit3, Check, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Zap, Edit3, Check, X, Loader2 } from 'lucide-react';
 import type { SemanticGroup } from '../algorithm/types';
+import { generateSectionSummaryWithGemini } from '../utils/llmParser';
 
 // ══════════════════════════════════════════════════════════
 // CHAPTER DIVIDER
 // Renders a professional boundary between semantic groups.
+// Includes Executive Section Summaries (LLM-powered).
 // ══════════════════════════════════════════════════════════
 
 export function ChapterDivider({
     group,
-    onUpdateSummary
+    onUpdateSummary,
+    sectionText
 }: {
     group: SemanticGroup;
     onUpdateSummary: (id: number, summary: string) => void;
+    sectionText: string;
 }) {
     const [isEditing, setIsEditing] = useState(false);
+    const [isGenerating, setIsGenerating] = useState(false);
     const [tempSummary, setTempSummary] = useState(group.customSummary || '');
     const topics = Object.keys(group.summaryStats.topics).slice(0, 3);
+
+    useEffect(() => {
+        // Auto-generate summary if not present and section has content
+        if (!group.customSummary && !isGenerating && sectionText.length > 100) {
+            const runGeneration = async () => {
+                setIsGenerating(true);
+                const result = await generateSectionSummaryWithGemini(sectionText);
+                if (result) {
+                    onUpdateSummary(group.id, result);
+                    setTempSummary(result);
+                }
+                setIsGenerating(false);
+            };
+            runGeneration();
+        }
+    }, [group.id, group.customSummary, isGenerating, sectionText, onUpdateSummary]);
 
     const handleSave = () => {
         onUpdateSummary(group.id, tempSummary);
@@ -37,10 +58,10 @@ export function ChapterDivider({
                 <div className="chapter-line"></div>
             </div>
 
-            {(group.customSummary || isEditing) && (
+            {(group.customSummary || isEditing || isGenerating) && (
                 <div className="chapter-notes">
                     <div className="notes-header">
-                        <span className="notes-label">SECTION NOTES</span>
+                        <span className="notes-label">EXECUTIVE SUMMARY</span>
                         {isEditing && (
                             <div className="notes-actions">
                                 <button onClick={handleSave} className="note-btn note-save"><Check size={10} /></button>
@@ -48,7 +69,12 @@ export function ChapterDivider({
                             </div>
                         )}
                     </div>
-                    {isEditing ? (
+                    {isGenerating ? (
+                        <div className="summary-skeleton">
+                            <Loader2 size={12} className="animate-spin text-amber-600" />
+                            <div className="skeleton-line" style={{ width: '90%', height: '10px' }}></div>
+                        </div>
+                    ) : isEditing ? (
                         <textarea
                             className="notes-input"
                             value={tempSummary}
