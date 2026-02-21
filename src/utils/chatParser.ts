@@ -3,49 +3,14 @@ import { removeJunk } from './junkRemoval';
 import { removeTrailingInvitations } from './junkRemoval';
 import { normalizeBold, recoverTables, detectHasTable } from './tableRecovery';
 import { extractKeyPoints } from './keyPoints';
+import { repairMarkdown, beautifyCitations } from './markdownRepair';
 
 // ══════════════════════════════════════════════════════════
 // SYSTEM 4: UNIVERSAL DIALOGUE PARSER
 // Supports Gemini, ChatGPT, Claude, and generic AI formats
 // ══════════════════════════════════════════════════════════
 
-const USER_MARKERS: RegExp[] = [
-    /^あなたのプロンプト$/,
-    /^You$/,
-    /^あなた$/,
-    /^User$/i,
-    /^自分$/,
-    /^Human$/i,
-    /^Me$/i,
-    /^You said:?$/i,
-];
-
-const ASSISTANT_MARKERS: RegExp[] = [
-    // Gemini variants
-    /^Gemini$/,
-    /^Gemini の回答$/,
-    /^Gemini の返答$/,
-    /^Gemini\s+の/,
-    /^ジェミニ/,
-    /^Gemini\s+\d+(\.\d+)?/,
-    // ChatGPT variants
-    /^ChatGPT$/i,
-    /^ChatGPT said:?$/i,
-    /^GPT-?[3-9]/i,
-    /^o[13]-?mini/i,
-    /^OpenAI$/i,
-    // Claude variants
-    /^Claude$/i,
-    /^Claude said:?$/i,
-    /^Claude\s+[0-9]/i,
-    /^Anthropic$/i,
-    // Gemini said format
-    /^Gemini said:?$/i,
-    // Generic
-    /^Assistant$/i,
-    /^AI$/i,
-    /^AI said:?$/i,
-];
+import { USER_MARKERS, ASSISTANT_MARKERS } from './markers';
 
 export function detectLLM(raw: string): LLMName {
     if (/\bClaude\b/i.test(raw)) return 'Claude';
@@ -87,7 +52,7 @@ export function parseChatLog(raw: string): { turns: Turn[]; llm: LLMName } {
             buf = []; role = 'assistant';
             currentLabel = labelFromLine(line);
         } else if (isUserLine(line)) {
-            if (buf.join('').trim()) segs.push({ role, llmLabel: 'USER', lines: [...buf] });
+            if (buf.join('').trim()) segs.push({ role, llmLabel: currentLabel, lines: [...buf] });
             buf = []; role = 'user'; currentLabel = 'USER';
         } else {
             buf.push(line);
@@ -108,7 +73,7 @@ export function parseChatLog(raw: string): { turns: Turn[]; llm: LLMName } {
         if (!rawContent) continue;
         const isAssistant = seg.role === 'assistant';
         const content = isAssistant
-            ? normalizeBold(recoverTables(removeTrailingInvitations(rawContent)))
+            ? beautifyCitations(repairMarkdown(normalizeBold(recoverTables(removeTrailingInvitations(rawContent)))))
             : rawContent;
         turns.push({
             role: seg.role,

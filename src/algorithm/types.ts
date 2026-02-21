@@ -20,7 +20,8 @@ export type ArtifactTag =
     | 'LINK'      // URL
     | 'TABLE'     // テーブル
     | 'DOC'       // 仕様/文章
-    | 'IMAGE_REF'; // 画像参照
+    | 'IMAGE_REF' // 画像参照
+    | 'CONFLICT';  // 対立意見/矛盾点
 
 // --- Role ---
 export type Role = 'user' | 'ai';
@@ -57,6 +58,8 @@ export interface BlockFeatures {
     hasPoliteForm: boolean;
     hasExplanationStructure: boolean;
     hasImperativeForm: boolean;
+    hasUserMarker: boolean;
+    hasAiMarker: boolean;
     sentimentScore: number;
     technicalTermDensity: number;
     formality: number;
@@ -90,6 +93,7 @@ export interface OptimizedBlock extends ScoredBlock {
 /** Final analyzed message */
 export interface AnalyzedMessage {
     id: number;
+    sourceId: number; // document index origin
     role: Role;
     text: string;
     confidence: number;
@@ -103,6 +107,7 @@ export interface AnalyzedMessage {
 export interface SemanticGroup {
     id: number;
     span: [number, number]; // [startMessageId, endMessageId]
+    customSummary?: string;  // User-provided override or notes
     summaryStats: {
         topics: Record<string, number>;
         intents: Record<string, number>;

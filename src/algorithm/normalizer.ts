@@ -19,13 +19,10 @@ const JUNK_EXACT = new Set([
     'Copy to clipboard', 'Retry response',
 ]);
 
-/**
- * Junk patterns that can appear mid-block (line-level regex)
- */
+// Junk that can appear ANYWHERE mid-block (YouTube stubs, bare URLs)
 const INLINE_JUNK_RE: RegExp[] = [
     /^\s*https?:\/\/\S+\s*$/,            // bare URL line (in junk context)
     /^\s*www\.\S/,
-    /\[cite:\s*\d/,                       // citation tags
     /回の視聴/,
     /Are So Expensive/i,
     /^\s*(Business Insider|Forbes|Bloomberg|TechCrunch|Wired)\s*[·•\-–]/i,

@@ -4,40 +4,7 @@
 
 import type { OptimizedBlock, Role } from './types';
 
-// ── Explicit role markers (migrated from App.tsx) ───────
-
-const USER_MARKERS: RegExp[] = [
-    /^あなたのプロンプト$/,
-    /^You$/,
-    /^あなた$/,
-    /^User$/i,
-    /^自分$/,
-    /^Human$/i,
-    /^Me$/i,
-    /^You said:?\s*$/i,
-];
-
-const ASSISTANT_MARKERS: RegExp[] = [
-    /^Gemini$/,
-    /^Gemini の回答$/,
-    /^Gemini の返答$/,
-    /^Gemini\s+の/,
-    /^ジェミニ/,
-    /^Gemini\s+\d+(\.\d+)?/,
-    /^ChatGPT$/i,
-    /^ChatGPT said:?\s*$/i,
-    /^GPT-?[3-9]/i,
-    /^o[13]-?mini/i,
-    /^OpenAI$/i,
-    /^Claude$/i,
-    /^Claude said:?\s*$/i,
-    /^Claude\s+[0-9]/i,
-    /^Anthropic$/i,
-    /^Gemini said:?\s*$/i,
-    /^Assistant$/i,
-    /^AI$/i,
-    /^AI said:?\s*$/i,
-];
+import { USER_MARKERS, ASSISTANT_MARKERS } from '../utils/markers';
 
 function isUserMarker(text: string): boolean {
     const t = text.trim();
@@ -146,18 +113,40 @@ export function postProcess(blocks: OptimizedBlock[]): OptimizedBlock[] {
     }
 
     // ── Step 5: Remove marker-only blocks ──
-    // Marker blocks are metadata; their content should have been propagated
     const cleaned = merged.filter(block => {
         const explicit = getExplicitRole(block);
         if (explicit === null) return true; // not a marker, keep
-
-        // Keep marker blocks only if they contain additional content beyond the marker
         const lines = block.text.split('\n').filter(l => l.trim());
-        return lines.length > 1;
+        return lines.length > 1; // Keep only if it has content beyond the marker
     });
 
+    // ── Step 6: Semantic Deduplication (The "Gemini Echo" Fix) ──
+    const deduplicated: OptimizedBlock[] = [];
+    for (let i = 0; i < cleaned.length; i++) {
+        const curr = cleaned[i];
+        if (deduplicated.length === 0) {
+            deduplicated.push(curr);
+            continue;
+        }
+
+        const prev = deduplicated[deduplicated.length - 1];
+
+        // Check if current is a near-duplicate of previous (Gemini echo)
+        const t1 = prev.text.trim();
+        const t2 = curr.text.trim();
+        const isNearDuplicate = t1 === t2 || (t1.length > 10 && (t1.includes(t2) || t2.includes(t1)));
+
+        if (isNearDuplicate && prev.role === curr.role) {
+            if (curr.confidence > prev.confidence) {
+                deduplicated[deduplicated.length - 1] = curr;
+            }
+        } else {
+            deduplicated.push(curr);
+        }
+    }
+
     // Re-index
-    return cleaned.map((block, idx) => ({
+    return deduplicated.map((block, idx) => ({
         ...block,
         id: idx,
     }));

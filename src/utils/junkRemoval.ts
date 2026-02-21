@@ -13,11 +13,9 @@ const JUNK_EXACT = new Set([
     'Read aloud', 'Search the web', 'Create image',
 ]);
 
-// Junk that can appear ANYWHERE mid-block (YouTube stubs, bare URLs, cite tags)
 const INLINE_JUNK_LINE_RE: RegExp[] = [
     /^\s*https?:\/\//,
     /^\s*www\.\S/,
-    /\[cite:\s*\d/,
     /回の視聴/,
     /Are So Expensive/i,
     /^\s*(Business Insider|Forbes|Bloomberg|TechCrunch|Wired)\s*[·•\-–]/i,
@@ -69,7 +67,6 @@ const INVITATION_RE: RegExp[] = [
     /YouTube/i,
     /Business Insider/i,
     /Are So Expensive/i,
-    /\[cite:\s*\d/,
     /回の視聴/,
     /^\s*Sources?:\s*$/i,
     /^\s*参考文献/,

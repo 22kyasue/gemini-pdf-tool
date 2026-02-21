@@ -2,10 +2,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { ErrorBoundary, _onRenderError } from './ErrorBoundary';
+import { Mermaid } from './Mermaid';
+import { CitationBadge } from './CitationBadge';
 
 // ══════════════════════════════════════════════════════════
 // CONTENT RENDERER
-// Mixed MD + HTML table renderer.
+// Mixed MD + HTML table renderer + Mermaid support.
 // Uses rehype-raw so <strong> and smart-table HTML pass through.
 // ══════════════════════════════════════════════════════════
 
@@ -15,12 +17,10 @@ import { ErrorBoundary, _onRenderError } from './ErrorBoundary';
 function sanitizeContent(md: string): string {
     let sanitized = md;
 
-    // 1. Bracket all markdown headings (e.g., "# " -> "[#] ", "## " -> "[##] ").
-    // Fixes #004: Prevents "blowup" by making them literal text instead of structural headers.
-    // Also covers the previous #002 fix for headings inside list items.
-    sanitized = sanitized.replace(/^([ \t]*)(#{1,6})( )/gm, '$1[$2]$3');
+    // Headings are now handled safely by CSS word-break and max-width.
+    // Bracketing them (e.g. [##]) looked unprofessional to users.
 
-    // 2. Escape raw HTML heading tags (<h1> through <h6>).
+    // 1. Escape raw HTML heading tags (<h1> through <h6>).
     // Fixes #003: "<h1>" -> "&lt;h1&gt;"
     sanitized = sanitized.replace(/<(h[1-6])(?:\s[^>]*)?>/gi, '&lt;$1&gt;');
     sanitized = sanitized.replace(/<\/(h[1-6])>/gi, '&lt;/$1&gt;');
@@ -31,6 +31,7 @@ function sanitizeContent(md: string): string {
 export function ContentRenderer({ content }: { content: string }) {
     const TABLE_RE = /(<table[\s\S]*?<\/table>)/;
     const handleError = () => _onRenderError.current?.();
+
     return (
         <ErrorBoundary onError={handleError}>
             <>
@@ -39,7 +40,30 @@ export function ContentRenderer({ content }: { content: string }) {
                         <div key={i} className="smart-table-wrap" dangerouslySetInnerHTML={{ __html: part }} />
                     ) : part.trim() ? (
                         <ErrorBoundary key={i} onError={handleError}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                            <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                rehypePlugins={[rehypeRaw]}
+                                components={{
+                                    sup({ node, className, children, ...props }) {
+                                        if (className === 'cit-badge') {
+                                            return <CitationBadge num={String(children)} />;
+                                        }
+                                        return <sup className={className} {...props}>{children}</sup>;
+                                    },
+                                    code({ node, className, children, ...props }) {
+                                        const match = /language-(\w+)/.exec(className || '');
+                                        const isMermaid = match && match[1] === 'mermaid';
+                                        if (isMermaid) {
+                                            return <Mermaid chart={String(children).replace(/\n$/, '')} />;
+                                        }
+                                        return (
+                                            <code className={className} {...props}>
+                                                {children}
+                                            </code>
+                                        );
+                                    }
+                                }}
+                            >
                                 {sanitizeContent(part)}
                             </ReactMarkdown>
                         </ErrorBoundary>

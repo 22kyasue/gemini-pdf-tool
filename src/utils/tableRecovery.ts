@@ -15,6 +15,7 @@ export const KEYWORD_DICT: string[] = [
     '推奨', '提案', '種類', 'タイプ', '方法', '手順', '効果', '効能',
     '価格', 'コスト', '費用', '評価', 'スコア', '期間', '頻度',
     '対象', '条件', '項目', '内容', 'ステータス', '優先', '結果', '名前',
+    '脂質異常症', '血糖管理', '消化器系', '美容・皮膚', '美容', '皮膚',
     // English
     'Priority', 'Feature', 'Benefit', 'Description', 'Category',
     'Status', 'Rating', 'Score', 'Notes', 'Example', 'Type', 'Name',
@@ -39,8 +40,9 @@ function splitByKeywords(line: string): string[] | null {
  *   2. 2+ consecutive spaces    (visual alignment — Gemini copy-paste tables)
  *   3. Single space between known keywords (e.g. "年齢層 推奨される傾向 理由")
  *   4. Concatenated keywords, no separator at all
+ *   5. Fallback: split by any whitespace (greedy)
  */
-export function splitColumns(line: string): string[] {
+export function splitColumns(line: string, expectedCount?: number): string[] {
     const t = line.trim();
 
     // 1. Tab-separated — strongest signal
@@ -56,6 +58,12 @@ export function splitColumns(line: string): string[] {
 
     // 3. Single space between known keywords (e.g. "年齢層 推奨される傾向 理由")
     const singleSpaceTokens = t.split(' ').map(c => c.trim()).filter(c => c);
+    
+    // If we have an expected count, try whitespace split
+    if (expectedCount && singleSpaceTokens.length === expectedCount) {
+        return singleSpaceTokens;
+    }
+
     if (
         singleSpaceTokens.length >= 2 &&
         singleSpaceTokens.every(w => KEYWORD_DICT.includes(w))
@@ -65,45 +73,55 @@ export function splitColumns(line: string): string[] {
 
     // 4. Concatenated keywords with NO separator
     const kw = splitByKeywords(t);
-    return kw ?? [t];
+    if (kw) return kw;
+
+    // 5. Hard fallback — if it looks like a row but separators are weak
+    return singleSpaceTokens;
 }
 
 export function looksLikeTable(lines: string[]): boolean {
-    // Need at least 3 lines (header + 2 data rows) to avoid false positives
-    if (lines.length < 3) return false;
+    // Need at least 2 lines (header + 1 data row)
+    if (lines.length < 2) return false;
     // Already a GFM pipe table — let remark-gfm handle it
     if (lines.some(l => l.trim().startsWith('|'))) return false;
 
-    const cols = lines.map(l => splitColumns(l).length);
-    const colCount = cols[0];
+    // 1. Detect header
+    const firstLine = lines[0];
+    const headerCells = splitColumns(firstLine);
+    const colCount = headerCells.length;
+    
     if (colCount < 2) return false;
-    if (!cols.every(c => c === colCount)) return false;
 
-    // If ALL cells are long natural sentences (≥40 chars), it's prose, not a table
-    const allRows = lines.map(l => splitColumns(l));
-    const allCellsLong = allRows.every(row => row.every(cell => cell.length >= 40));
+    // Is the header "strong"? (contains keywords)
+    const hasKnownKeyword = headerCells.some(cell => KEYWORD_DICT.includes(cell.trim()));
+    
+    // 2. Check subsequent lines
+    // For subsequent lines, we use splitColumns with expectedCount to be more lenient
+    const rows = lines.slice(1).map(l => splitColumns(l, colCount));
+    const allMatch = rows.every(r => r.length === colCount);
+
+    if (!allMatch) return false;
+
+    // If ALL cells are long natural sentences (≥50 chars), it's prose, not a table
+    const allCellsLong = lines.every(l => splitColumns(l, colCount).every(cell => cell.length >= 50));
     if (allCellsLong) return false;
 
-    // Tab-separated → very strong table signal
-    const hasTab = lines.some(l => l.includes('\t'));
-    if (hasTab) return true;
+    // Reliability check: if single-spaced, we MUST have a keyword in the header
+    const isSingleSpaced = lines.every(l => !l.includes('\t') && !/\s{2,}/.test(l));
+    if (isSingleSpaced && !hasKnownKeyword) return false;
 
-    // 2+ space visual alignment in every line → accept
-    const has2Space = lines.every(l => /\s{2,}/.test(l));
-    if (has2Space) return true;
-
-    // For single-space lines, require at least one header cell to be a known keyword
-    const headerCells = splitColumns(lines[0]);
-    const hasKnownKeyword = headerCells.some(cell => KEYWORD_DICT.includes(cell.trim()));
-    return hasKnownKeyword;
+    return true;
 }
 
 export function buildHtmlTable(lines: string[]): string {
-    const rows = lines.map(l => splitColumns(l));
+    const headerCols = splitColumns(lines[0]);
+    const colCount = headerCols.length;
+    const rows = lines.map(l => splitColumns(l, colCount));
+    
     const [header, ...body] = rows;
     const ths = header.map(h => `<th>${h}</th>`).join('');
     const trs = body.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('\n');
-    return `<table class="smart-table">\n<thead><tr>${ths}</tr></thead>\n<tbody>${trs}</tbody>\n</table>`;
+    return `<div class="smart-table-wrap">\n<table class="smart-table">\n<thead><tr>${ths}</tr></thead>\n<tbody>${trs}</tbody>\n</table>\n</div>`;
 }
 
 /**

@@ -9,18 +9,21 @@ import type { SegmentedBlock } from './types';
 /** Horizontal rule line */
 const RULE_LINE_RE = /^[\s]*[-_═╌─━]{3,}[\s]*$/;
 
-/** Explicit role header lines (User:, Assistant:, etc.) */
-const EXPLICIT_HEADER_RE = /^(User|You|あなた|あなたのプロンプト|自分|Human|Me|Assistant|AI|Gemini|ChatGPT|Claude|Bot|GPT-?[3-9]|o[13]-?mini|Anthropic|OpenAI)(\s+(said|の回答|の返答|の)):?\s*$/i;
+/** Explicit role header markers (inline or standalone) */
+const INLINE_HEADER_RE = /^(User|You|あなた|あなたのプロンプト|自分|Human|Me|Assistant|AI|Gemini|ChatGPT|Claude|Bot|Anthropic|OpenAI|Guest)(\s+(said|の回答|の返答|の))?:?\s/i;
 
-/** Check if a line is a role-marker header */
-function isExplicitHeader(line: string): boolean {
+/** Check if a line starts with a role-marker header */
+function startsWithHeader(line: string): boolean {
     const t = line.trim();
-    // Also handle "X said:" format
-    if (/^(You|ChatGPT|Claude|Gemini|AI|Assistant)\s+said:?\s*$/i.test(t)) return true;
-    if (EXPLICIT_HEADER_RE.test(t)) return true;
-    // Japanese specific
-    if (/^(あなたのプロンプト|Gemini の回答|Gemini の返答|ジェミニ)$/.test(t)) return true;
-    return false;
+    return INLINE_HEADER_RE.test(t);
+}
+
+/** Check if a line IS a standalone header */
+function isStandaloneHeader(line: string): boolean {
+    const t = line.trim();
+    // Header only, nothing follows or just whitespace
+    const match = t.match(INLINE_HEADER_RE);
+    return !!match && match[0].trim() === t;
 }
 
 // ── B-2: Soft boundaries (conditional split) ────────────
@@ -133,16 +136,24 @@ export function segment(normalizedText: string): SegmentedBlock[] {
             continue;
         }
 
-        // ── Hard boundary: explicit role header ──
-        if (isExplicitHeader(line)) {
+        // ── Hard boundary: explicit role header (standalone or inline) ──
+        if (startsWithHeader(line)) {
             flushBlock();
-            // The header itself becomes a 1-line block (will be consumed by role scorer)
-            rawBlocks.push({
-                lines: [line],
-                startLine: i,
-                boundaryType: 'hard',
-            });
-            currentStart = i + 1;
+
+            if (isStandaloneHeader(line)) {
+                // Standalone header becomes its own block
+                rawBlocks.push({
+                    lines: [line],
+                    startLine: i,
+                    boundaryType: 'hard',
+                });
+                currentStart = i + 1;
+            } else {
+                // Inline header starts a new block but includes the content
+                currentStart = i;
+                currentLines.push(line);
+            }
+
             currentBoundaryType = 'hard';
             continue;
         }

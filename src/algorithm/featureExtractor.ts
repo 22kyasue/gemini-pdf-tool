@@ -21,6 +21,10 @@ const POLITE_RE = /です[。.]?$|ます[。.]?$|ございます|でしょう|�
 const EXPLANATION_RE = /とは[、。]|つまり|例えば|すなわち|具体的には|言い換えると|以下[のにはで]|まとめると|ポイント[はを]|ステップ/;
 const IMPERATIVE_RE = /[しやつ作直教見出消変送]て[。、！!]?$|ください|してほしい|お願い/m;
 
+// Explicit role markers (at start of block)
+const USER_MARKER_RE = /^(User|You|あなた|あなたのプロンプト|自分|Human|Me|Guest):/i;
+const AI_MARKER_RE = /^(Assistant|AI|Gemini|ChatGPT|Claude|Bot|GPT|Anthropic|OpenAI):/i;
+
 // Casual / emotional patterns (user-leaning)
 const CASUAL_RE = /だよ|じゃん|だね|かな[？?]?$|やばい|マジ[でか]|ぽい|わかんない|むり|つらい/m;
 
@@ -73,6 +77,8 @@ function extractFeatures(block: SegmentedBlock): BlockFeatures {
         hasPoliteForm: POLITE_RE.test(text),
         hasExplanationStructure: EXPLANATION_RE.test(text),
         hasImperativeForm: IMPERATIVE_RE.test(text),
+        hasUserMarker: USER_MARKER_RE.test(text),
+        hasAiMarker: AI_MARKER_RE.test(text),
         sentimentScore,
         technicalTermDensity,
         formality,

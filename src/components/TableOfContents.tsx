@@ -1,20 +1,65 @@
-import { List, Table } from 'lucide-react';
+import { List, Table, Zap } from 'lucide-react';
 import type { Turn } from '../types';
+import type { AnalyzedMessage, SemanticGroup } from '../algorithm/types';
 
 // ══════════════════════════════════════════════════════════
 // TABLE OF CONTENTS
 // Intelligent TOC with [表あり] badges.
+// Supports both Legacy (Turns) and New Algo (Semantic Groups).
 // ══════════════════════════════════════════════════════════
 
-export function TableOfContents({ turns }: { turns: Turn[] }) {
+export function TableOfContents({
+    turns,
+    analysis,
+    isPdfMode = false
+}: {
+    turns?: Turn[];
+    analysis?: { messages: AnalyzedMessage[]; semanticGroups: SemanticGroup[] };
+    isPdfMode?: boolean;
+}) {
+    const containerClass = `toc-block ${isPdfMode ? 'pdf-only-toc' : 'no-print'}`;
+    // ── New Algorithm Mode ──
+    if (analysis && analysis.semanticGroups.length > 0) {
+        return (
+            <div className={containerClass}>
+                <div className="toc-header">
+                    <Zap size={14} strokeWidth={2.5} className="text-indigo-500" />
+                    <span>AI セマンティック目次</span>
+                </div>
+                <div className="toc-groups">
+                    {analysis.semanticGroups.map(group => {
+                        const firstMsg = analysis.messages[group.span[0]];
+                        const topics = Object.keys(group.summaryStats.topics).slice(0, 3);
+                        const hasTable = group.summaryStats.artifacts['TABLE'] > 0;
+
+                        return (
+                            <a key={group.id} href={`#block-${firstMsg.id}`} className="toc-link group-link">
+                                <div className="toc-q">
+                                    <div className="toc-topic-row">
+                                        {topics.map(t => <span key={t} className="mini-tag">{t}</span>)}
+                                    </div>
+                                    <div className="toc-text">
+                                        {firstMsg.text.split('\n').find(l => l.trim())?.trim().slice(0, 60)}…
+                                    </div>
+                                </div>
+                                {hasTable && <span className="toc-badge"><Table size={10} strokeWidth={2} />表あり</span>}
+                            </a>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    }
+
+    // ── Legacy Mode ──
+    if (!turns || turns.length === 0) return null;
     const pairs = turns.reduce<{ user: Turn; assistant: Turn | null }[]>((acc, t, i) => {
         if (t.role === 'user') acc.push({ user: t, assistant: turns[i + 1]?.role === 'assistant' ? turns[i + 1] : null });
         return acc;
     }, []);
-    if (pairs.length === 0) return null;
 
     return (
-        <div className="toc-block">
+        <div className={containerClass}>
             <div className="toc-header"><List size={14} strokeWidth={2} /><span>目次・インデックス</span></div>
             <ol className="toc-list">
                 {pairs.map(({ user, assistant }) => (

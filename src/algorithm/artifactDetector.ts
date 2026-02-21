@@ -24,7 +24,7 @@ const ARTIFACT_RULES: ArtifactRule[] = [
             /```/,                               // fenced code block
             /^\s{4}\S/m,                         // 4-space indented code
         ],
-        validate: (text, lines) => {
+        validate: (_text, lines) => {
             // Also detect command-line entries
             const commandLineRe = /^\s*(npm|npx|git|cd|brew|pip|pip3|yarn|pnpm|sudo|curl|wget|docker|kubectl|make|cmake|cargo|go\s+\w+|python|python3|node|ruby|java\s+-)/;
             if (lines.some(l => commandLineRe.test(l))) return true;
@@ -109,6 +109,29 @@ const ARTIFACT_RULES: ArtifactRule[] = [
             /\[image\]/i,
             /<<image>>/i,
         ],
+    },
+    {
+        tag: 'CONFLICT',
+        patterns: [
+            /しかしながら/i,
+            /一方で/i,
+            /矛盾/i,
+            /対立/i,
+            /\bHowever\b/i,
+            /\bBut actually\b/i,
+            /\bOn the other hand\b/i,
+            /\bContradicting\b/i,
+            /\bIn contrast\b/i,
+            /\bDivergence\b/i,
+        ],
+        validate: (text) => {
+            // High intensity contradiction markers
+            const intensityMarkers = [
+                "実際には", "正しくは", "誤解", "間違い",
+                "Wait,", "Actually,", "Correction:", "Incorrect"
+            ];
+            return intensityMarkers.some(m => text.includes(m));
+        }
     },
 ];
 

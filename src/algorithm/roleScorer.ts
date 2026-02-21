@@ -40,6 +40,10 @@ function scoreBlock(block: FeaturedBlock, deltas: Record<string, number>): Score
         scoreAi += baseAi;
     };
 
+    // Explicit markers (High confidence signal)
+    if (f.hasUserMarker) applyDelta('hasUserMarker', 15, 0);
+    if (f.hasAiMarker) applyDelta('hasAiMarker', 0, 15);
+
     // ── User-leaning features ──────────────────────────────
 
     // Short text (< 50 chars) — users tend to write short messages
