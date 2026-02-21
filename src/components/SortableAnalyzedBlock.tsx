@@ -10,6 +10,8 @@ export function SortableAnalyzedBlock(props: {
     onMergeWithPrev: (id: number) => void;
     onUpdateText: (id: number, newText: string) => void;
     onUpdateTopics: (id: number, topics: string[]) => void;
+    aiResult?: any;
+    onSetResult: (key: string, val: any) => void;
     isFirst: boolean;
     forceExpand?: boolean;
 }) {

@@ -10,7 +10,10 @@ import type { SegmentedBlock } from './types';
 const RULE_LINE_RE = /^[\s]*[-_═╌─━]{3,}[\s]*$/;
 
 /** Explicit role header markers (inline or standalone) */
-const INLINE_HEADER_RE = /^(User|You|あなた|あなたのプロンプト|自分|Human|Me|Assistant|AI|Gemini|ChatGPT|Claude|Bot|Anthropic|OpenAI|Guest)(\s+(said|の回答|の返答|の))?:?\s/i;
+const INLINE_HEADER_RE = /^[\s]*(User|You|あなた|あなたのプロンプト|自分|Human|Me|Assistant|AI|Gemini|ChatGPT|Claude|Bot|Anthropic|OpenAI|Guest|Support|Admin)(\s+(said|の回答|の返答|の))?[:：]\s*/i;
+
+/** Global version for mid-line splitting if necessary */
+const GLOBAL_HEADER_RE = /(?:^|\n)[\s]*(User|You|あなた|あなたのプロンプト|自分|Human|Me|Assistant|AI|Gemini|ChatGPT|Claude|Bot|Anthropic|OpenAI|Guest|Support|Admin)(\s+(said|の回答|の返答|の))?[:：]\s*/gi;
 
 /** Check if a line starts with a role-marker header */
 function startsWithHeader(line: string): boolean {
@@ -137,6 +140,26 @@ export function segment(normalizedText: string): SegmentedBlock[] {
         }
 
         // ── Hard boundary: explicit role header (standalone or inline) ──
+        // Support mid-line splitting if multiple markers exist on one line
+        const headerMatches = [...line.matchAll(GLOBAL_HEADER_RE)];
+        if (headerMatches.length > 1) {
+            flushBlock();
+            headerMatches.forEach((match, mIdx) => {
+                const start = match.index!;
+                const end = headerMatches[mIdx + 1]?.index ?? line.length;
+                const subLine = line.slice(start, end).trim();
+                if (subLine) {
+                    rawBlocks.push({
+                        lines: [subLine],
+                        startLine: i,
+                        boundaryType: 'hard'
+                    });
+                }
+            });
+            currentStart = i + 1;
+            continue;
+        }
+
         if (startsWithHeader(line)) {
             flushBlock();
 

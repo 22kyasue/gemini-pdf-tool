@@ -68,7 +68,8 @@ export function normalize(text: string): string {
             const t = line.trim();
             if (!t) return true; // keep blank lines for segmentation
             if (JUNK_EXACT.has(t)) return false;
-            if (INLINE_JUNK_RE.some(r => r.test(t))) return false;
+            // Relaxed: only strip mid-block junk if the line is extremely short/symbolic
+            if (t.length < 5 && INLINE_JUNK_RE.some(r => r.test(t))) return false;
             return true;
         })
         .join('\n');

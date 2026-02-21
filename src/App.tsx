@@ -77,6 +77,26 @@ export default function App() {
   const [cerebrasApiKey, setCerebrasApiKey] = useState(() => localStorage.getItem('cerebrasApiKey') || '');
   const [anthropicApiKey, setAnthropicApiKey] = useState(() => localStorage.getItem('anthropicApiKey') || '');
 
+  // Tracking for AI-processed results (survive re-renders)
+  const [aiResults, setAiResults] = useState<Record<number, {
+    cleanedText?: string | null;
+    recoveredText?: string | null;
+    keyPoints?: string[] | null;
+    summary?: string | null;
+    tried?: Record<string, boolean>;
+  }>>({});
+
+  const setAiResult = useCallback((id: number, key: string, val: any) => {
+    setAiResults(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        [key]: val,
+        tried: { ...prev[id]?.tried, [key]: true }
+      }
+    }));
+  }, []);
+
   const handleSaveApiKey = (val: string) => {
     setApiKey(val);
     localStorage.setItem('geminiApiKey', val);
@@ -370,6 +390,8 @@ export default function App() {
                                 group={displayGroup}
                                 onUpdateSummary={handleUpdateGroupSummary}
                                 sectionText={currentMessages.slice(displayGroup.span[0], displayGroup.span[1] + 1).map(msg => msg.text).join('\n\n')}
+                                aiResult={aiResults[1000 + displayGroup.id]}
+                                onSetResult={(key, val) => setAiResult(1000 + displayGroup.id, key, val)}
                               />
                             )}
                             <SortableAnalyzedBlock
@@ -378,6 +400,8 @@ export default function App() {
                               onMergeWithPrev={handleMergeWithPrev}
                               onUpdateText={handleUpdateMessageText}
                               onUpdateTopics={handleUpdateTopics}
+                              aiResult={aiResults[m.id]}
+                              onSetResult={(key, val) => setAiResult(m.id, key, val)}
                               isFirst={idx === 0}
                               forceExpand={isPdfExporting}
                             />

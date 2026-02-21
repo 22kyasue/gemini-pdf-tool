@@ -16,6 +16,8 @@ export function AnalyzedBlock({
     onMergeWithPrev,
     onUpdateText,
     onUpdateTopics,
+    aiResult,
+    onSetResult,
     isFirst,
     forceExpand = false,
 }: {
@@ -24,6 +26,13 @@ export function AnalyzedBlock({
     onMergeWithPrev: (id: number) => void;
     onUpdateText: (id: number, newText: string) => void;
     onUpdateTopics: (id: number, topics: string[]) => void;
+    aiResult?: {
+        cleanedText?: string | null;
+        recoveredText?: string | null;
+        keyPoints?: string[] | null;
+        tried?: Record<string, boolean>;
+    };
+    onSetResult: (key: string, val: any) => void;
     isFirst: boolean;
     forceExpand?: boolean;
 }) {
@@ -36,13 +45,15 @@ export function AnalyzedBlock({
 
     // -- Hybrid State (ML/LLM processing) --
     const [isRecovering, setIsRecovering] = useState(false);
-    const [recoveredText, setRecoveredText] = useState<string | null>(null);
-
     const [isExtractingPoints, setIsExtractingPoints] = useState(false);
-    const [keyPoints, setKeyPoints] = useState<string[] | null>(null);
-
     const [isCleaning, setIsCleaning] = useState(false);
-    const [cleanedText, setCleanedText] = useState<string | null>(null);
+
+    const recoveredText = aiResult?.recoveredText;
+    const keyPoints = aiResult?.keyPoints;
+    const cleanedText = aiResult?.cleanedText;
+    const hasAttemptedRecovery = aiResult?.tried?.recoveredText;
+    const hasAttemptedExtraction = aiResult?.tried?.keyPoints;
+    const hasAttemptedCleaning = aiResult?.tried?.cleanedText;
 
     const confPercent = Math.round(msg.confidence * 100);
     const confColor = msg.confidence >= 0.8 ? '#22c55e' : msg.confidence >= 0.5 ? '#f59e0b' : '#ef4444';
@@ -56,48 +67,66 @@ export function AnalyzedBlock({
             text.split('\n').filter(l => l.trim().split(/\s{2,}|\t/).length >= 2).length >= 2
         );
 
-        if (looksLikeTable && !recoveredText && !isRecovering) {
+        if (looksLikeTable && !recoveredText && !isRecovering && !hasAttemptedRecovery) {
             const runRecovery = async () => {
                 setIsRecovering(true);
-                const result = await recoverTableWithGemini(text);
-                if (result) setRecoveredText(result);
-                setIsRecovering(false);
+                onSetResult('recoveredText', null); // mark as attempted with null
+                try {
+                    const result = await recoverTableWithGemini(text);
+                    if (result) onSetResult('recoveredText', result);
+                } catch (e) {
+                    console.error("Table Recovery Trace Failure:", e);
+                } finally {
+                    setIsRecovering(false);
+                }
             };
             runRecovery();
         }
-    }, [msg.text, msg.role, recoveredText, isRecovering]);
+    }, [msg.text, msg.role, recoveredText, isRecovering, hasAttemptedRecovery]);
 
     // 2. Key Points Extraction
     useEffect(() => {
-        if (msg.role === 'ai' && !keyPoints && !isExtractingPoints && msg.text.length > 50) {
+        if (msg.role === 'ai' && !keyPoints && !isExtractingPoints && msg.text.length > 50 && !hasAttemptedExtraction) {
             const runExtraction = async () => {
                 setIsExtractingPoints(true);
-                const result = await extractKeyPointsWithGemini(msg.text);
-                if (result) {
-                    const points = result.split('\n')
-                        .map(l => l.replace(/^[-*]\s*/, '').trim())
-                        .filter(l => l.length > 0)
-                        .slice(0, 3);
-                    setKeyPoints(points);
+                onSetResult('keyPoints', null); // mark as attempted
+                try {
+                    const result = await extractKeyPointsWithGemini(msg.text);
+                    if (result) {
+                        const points = result.split('\n')
+                            .map(l => l.replace(/^[-*]\s*/, '').trim())
+                            .filter(l => l.length > 0)
+                            .slice(0, 3);
+                        onSetResult('keyPoints', points);
+                    }
+                } catch (e) {
+                    console.error("Key Points Trace Failure:", e);
+                } finally {
+                    setIsExtractingPoints(false);
                 }
-                setIsExtractingPoints(false);
             };
             runExtraction();
         }
-    }, [msg.text, msg.role, keyPoints, isExtractingPoints]);
+    }, [msg.text, msg.role, keyPoints, isExtractingPoints, hasAttemptedExtraction, onSetResult]);
 
     // 3. Noise Removal (Cleansing)
     useEffect(() => {
-        if (msg.role === 'ai' && !cleanedText && !isCleaning && msg.text.length > 30) {
+        if (msg.role === 'ai' && !cleanedText && !isCleaning && msg.text.length > 30 && !hasAttemptedCleaning) {
             const runCleansing = async () => {
                 setIsCleaning(true);
-                const result = await removeNoiseWithGemini(msg.text);
-                if (result) setCleanedText(result);
-                setIsCleaning(false);
+                onSetResult('cleanedText', null); // mark as attempted
+                try {
+                    const result = await removeNoiseWithGemini(msg.text);
+                    if (result) onSetResult('cleanedText', result);
+                } catch (e) {
+                    console.error("Noise Removal Trace Failure:", e);
+                } finally {
+                    setIsCleaning(false);
+                }
             };
             runCleansing();
         }
-    }, [msg.text, msg.role, cleanedText, isCleaning]);
+    }, [msg.text, msg.role, cleanedText, isCleaning, hasAttemptedCleaning, onSetResult]);
 
     const handleEraseLine = (lineIndex: number) => {
         const lines = msg.text.split('\n');

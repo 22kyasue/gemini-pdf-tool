@@ -12,32 +12,45 @@ import { generateSectionSummaryWithGemini } from '../utils/llmParser';
 export function ChapterDivider({
     group,
     onUpdateSummary,
-    sectionText
+    sectionText,
+    aiResult,
+    onSetResult,
 }: {
     group: SemanticGroup;
     onUpdateSummary: (id: number, summary: string) => void;
     sectionText: string;
+    aiResult?: { summary?: string | null; tried?: Record<string, boolean> };
+    onSetResult: (key: string, val: any) => void;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [tempSummary, setTempSummary] = useState(group.customSummary || '');
     const topics = Object.keys(group.summaryStats.topics).slice(0, 3);
 
+    const hasAttempted = aiResult?.tried?.summary;
+
     useEffect(() => {
         // Auto-generate summary if not present and section has content
-        if (!group.customSummary && !isGenerating && sectionText.length > 100) {
+        if (!group.customSummary && !isGenerating && sectionText.length > 100 && !hasAttempted) {
             const runGeneration = async () => {
                 setIsGenerating(true);
-                const result = await generateSectionSummaryWithGemini(sectionText);
-                if (result) {
-                    onUpdateSummary(group.id, result);
-                    setTempSummary(result);
+                onSetResult('summary', null); // mark as attempted
+                try {
+                    const result = await generateSectionSummaryWithGemini(sectionText);
+                    if (result) {
+                        onUpdateSummary(group.id, result);
+                        setTempSummary(result);
+                        onSetResult('summary', result);
+                    }
+                } catch (e) {
+                    console.error("Section Summary Trace Failure:", e);
+                } finally {
+                    setIsGenerating(false);
                 }
-                setIsGenerating(false);
             };
             runGeneration();
         }
-    }, [group.id, group.customSummary, isGenerating, sectionText, onUpdateSummary]);
+    }, [group.id, group.customSummary, isGenerating, sectionText, onUpdateSummary, hasAttempted, onSetResult]);
 
     const handleSave = () => {
         onUpdateSummary(group.id, tempSummary);
