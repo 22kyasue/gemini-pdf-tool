@@ -681,21 +681,21 @@ body,
   margin-bottom: 0 !important;
 }
 
-/* H1 — text-4xl font-black tracking-tight mb-6 */
+/* H1 — reduced for better PDF proportionality */
 .markdown-body h1 {
-  font-size: 2rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: var(--color-slate-900);
   letter-spacing: -0.03em;
   margin: 0 0 1.5rem;
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid var(--color-primary-500);
+  border-bottom: 1.5px solid var(--color-primary-500);
   line-height: 1.15;
 }
 
-/* H2 — text-2xl font-bold mt-10 mb-4 border-l-8 border-indigo-600 pl-4 */
+/* H2 — reduced for professional look */
 .markdown-body h2 {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--color-slate-800);
   margin: 2rem 0 1rem;
@@ -704,9 +704,9 @@ body,
   line-height: 1.35;
 }
 
-/* H3 — text-lg font-semibold text-slate-700 */
+/* H3 — slightly reduced */
 .markdown-body h3 {
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 600;
   color: var(--color-slate-700);
   margin: 1.25rem 0 0.5rem;
