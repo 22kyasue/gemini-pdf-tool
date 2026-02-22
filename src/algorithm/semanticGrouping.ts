@@ -9,42 +9,34 @@ import type { AnalyzedMessage, SemanticGroup, SemanticVector, IntentTag } from '
  * No embeddings — uses keyword extraction and dictionary matching.
  */
 function buildSemanticVector(msg: AnalyzedMessage): SemanticVector {
-    const text = msg.text.toLowerCase();
+    // Limit scan to first 10k chars to avoid freezing on accidental massive blocks
+    const truncatedText = msg.text.slice(0, 10000).toLowerCase();
 
-    // Extract keywords: split on whitespace and punctuation, normalize
-    const rawTokens = text
+    // Extract keywords: single pass replace
+    const rawTokens = truncatedText
         .replace(/[^\w\u3040-\u30FF\u4E00-\u9FFF\u3400-\u4DBFa-zA-Z0-9_-]/g, ' ')
         .split(/\s+/)
         .filter(t => t.length >= 2);
 
     const keywords = new Set(rawTokens);
-
-    // Add bigrams for better context
-    for (let i = 0; i < rawTokens.length - 1; i++) {
+    for (let i = 0; i < Math.min(rawTokens.length - 1, 500); i++) {
         keywords.add(`${rawTokens[i]}_${rawTokens[i + 1]}`);
     }
 
-    // Important terms: katakana, English technical terms, numbers
     const importantTerms = new Set<string>();
-    const katakanaRe = /[\u30A0-\u30FF]{2,}/g;
-    const techTermRe = /\b[A-Z][a-zA-Z]*(?:[A-Z][a-z]+)+\b/g; // camelCase/PascalCase
-    const allCapsRe = /\b[A-Z]{2,}\b/g; // ACRONYMS
-
-    for (const match of text.matchAll(katakanaRe)) importantTerms.add(match[0]);
-    for (const match of msg.text.matchAll(techTermRe)) importantTerms.add(match[0].toLowerCase());
-    for (const match of msg.text.matchAll(allCapsRe)) importantTerms.add(match[0].toLowerCase());
-
-    // Entities: URLs, file paths, command names
     const entities = new Set<string>();
-    const urlRe = /https?:\/\/[^\s]+/g;
-    const pathRe = /([A-Z]:\\|\/Users\/|~\/|\.\/)[^\s]+/g;
-    const cmdRe = /\b(npm|git|docker|kubectl|brew|pip|yarn|curl)\b/gi;
 
-    for (const match of msg.text.matchAll(urlRe)) entities.add(match[0]);
-    for (const match of msg.text.matchAll(pathRe)) entities.add(match[0]);
-    for (const match of msg.text.matchAll(cmdRe)) entities.add(match[0].toLowerCase());
+    // Combined regex for single-pass scanning
+    const COMBINED_SCAN_RE = /(https?:\/\/[^\s]+)|(([A-Z]:\\|\/Users\/|~\/|\.\/)[^\s]+)|([\u30A0-\u30FF]{2,})|\b([A-Z][a-zA-Z]*(?:[A-Z][a-z]+)+)\b|\b([A-Z]{2,})\b/g;
 
-    // Topic tags (already computed in msg.topic)
+    for (const match of msg.text.slice(0, 10000).matchAll(COMBINED_SCAN_RE)) {
+        if (match[1]) entities.add(match[1]); // URL
+        else if (match[2]) entities.add(match[2]); // Path
+        else if (match[4]) importantTerms.add(match[4]); // Katakana
+        else if (match[5]) importantTerms.add(match[5].toLowerCase()); // MixedCase
+        else if (match[6]) importantTerms.add(match[6].toLowerCase()); // ACRONYM
+    }
+
     const topicTags = new Set(msg.topic);
 
     return { keywords, importantTerms, entities, topicTags };

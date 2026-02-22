@@ -2,7 +2,7 @@
 // GROUP SMOOTHING — Propagate representative tags within groups
 // ══════════════════════════════════════════════════════════
 
-import type { AnalyzedMessage, SemanticGroup, IntentTag, ArtifactTag } from './types';
+import type { AnalyzedMessage, SemanticGroup, IntentTag } from './types';
 
 /**
  * Smooth labels within semantic groups.

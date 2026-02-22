@@ -15,12 +15,16 @@ export function ChapterDivider({
     sectionText,
     aiResult,
     onSetResult,
+    hasApiKey: _hasApiKey,
+    aiEnabled,
 }: {
     group: SemanticGroup;
     onUpdateSummary: (id: number, summary: string) => void;
     sectionText: string;
     aiResult?: { summary?: string | null; tried?: Record<string, boolean> };
     onSetResult: (key: string, val: any) => void;
+    hasApiKey: boolean;
+    aiEnabled: boolean;
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -30,6 +34,7 @@ export function ChapterDivider({
     const hasAttempted = aiResult?.tried?.summary;
 
     useEffect(() => {
+        if (!aiEnabled) return;
         // Auto-generate summary if not present and section has content
         if (!group.customSummary && !isGenerating && sectionText.length > 100 && !hasAttempted) {
             const runGeneration = async () => {
@@ -50,7 +55,7 @@ export function ChapterDivider({
             };
             runGeneration();
         }
-    }, [group.id, group.customSummary, isGenerating, sectionText, onUpdateSummary, hasAttempted, onSetResult]);
+    }, [group.id, group.customSummary, isGenerating, sectionText, onUpdateSummary, hasAttempted, onSetResult, aiEnabled]);
 
     const handleSave = () => {
         onUpdateSummary(group.id, tempSummary);

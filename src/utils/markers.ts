@@ -10,8 +10,10 @@ export const USER_MARKERS: RegExp[] = [
     /^You$/,
     /^あなた$/,
     /^User$/i,
+    /^User:/i,
     /^自分$/,
     /^Human$/i,
+    /^Human:/i,
     /^Me$/i,
     /^You said:?\s*$/i,
     /^Sent by you:?\s*$/i,
@@ -20,6 +22,7 @@ export const USER_MARKERS: RegExp[] = [
 export const ASSISTANT_MARKERS: RegExp[] = [
     // Gemini variants
     /^Gemini$/,
+    /^Gemini:/i,
     /^Gemini の回答$/,
     /^Gemini の返答$/,
     /^Gemini\s+の/,
@@ -29,6 +32,7 @@ export const ASSISTANT_MARKERS: RegExp[] = [
 
     // ChatGPT variants
     /^ChatGPT$/i,
+    /^ChatGPT:/i,
     /^ChatGPT said:?\s*$/i,
     /^GPT-?[3-9]/i,
     /^o[13]-?mini/i,
@@ -37,14 +41,18 @@ export const ASSISTANT_MARKERS: RegExp[] = [
 
     // Claude variants
     /^Claude$/i,
+    /^Claude:/i,
     /^Claude said:?\s*$/i,
     /^Claude\s+[0-9]/i,
     /^Anthropic$/i,
 
     // Generic / Other
     /^Assistant$/i,
+    /^Assistant:/i,
     /^AI$/i,
+    /^AI:/i,
     /^AI said:?\s*$/i,
     /^Model$/i,
     /^Bot$/i,
+    /^Bot:/i,
 ];

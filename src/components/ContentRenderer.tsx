@@ -46,8 +46,8 @@ function CopyButton({ text }: { text: string }) {
  */
 function sanitizeContent(md: string): string {
     let sanitized = md;
-    // Remove Claude markers from markdown flow
-    sanitized = sanitized.replace('<!-- cl-restored -->', '');
+    // Remove AI-restored markers from markdown flow
+    sanitized = sanitized.replace('<!-- ai-restored -->', '');
     sanitized = sanitized.replace(/<(h[1-6])(?:\s[^>]*)?>/gi, '&lt;$1&gt;');
     sanitized = sanitized.replace(/<\/(h[1-6])>/gi, '&lt;/$1&gt;');
     return sanitized;
@@ -55,7 +55,7 @@ function sanitizeContent(md: string): string {
 
 export function ContentRenderer({ content }: { content: string }) {
     const TABLE_RE = /(<table[\s\S]*?<\/table>)/;
-    const isClaudeRestored = content.includes('<!-- cl-restored -->');
+    const isAiRestored = content.includes('<!-- ai-restored -->');
     const handleError = () => _onRenderError.current?.();
 
     return (
@@ -64,10 +64,10 @@ export function ContentRenderer({ content }: { content: string }) {
                 {content.split(TABLE_RE).map((part, i) =>
                     part.startsWith('<table') ? (
                         <div key={i} className="relative group">
-                            {isClaudeRestored && (
-                                <div className="claude-badge no-print">
+                            {isAiRestored && (
+                                <div className="ai-restored-badge no-print">
                                     <Sparkles size={10} className="text-amber-400" />
-                                    <span>Restored by Claude</span>
+                                    <span>Restored by AI</span>
                                 </div>
                             )}
                             <div className="smart-table-wrap" dangerouslySetInnerHTML={{ __html: part }} />

@@ -14,6 +14,9 @@ export function SortableAnalyzedBlock(props: {
     onSetResult: (key: string, val: any) => void;
     isFirst: boolean;
     forceExpand?: boolean;
+    hasApiKey: boolean;
+    aiEnabled: boolean;
+    onOpenSettings: () => void;
 }) {
     const {
         attributes,

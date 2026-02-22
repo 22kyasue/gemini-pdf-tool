@@ -108,8 +108,10 @@ function scoreBlock(block: FeaturedBlock, deltas: Record<string, number>): Score
     const pAi = sigmoid(margin);
 
     // Confidence: higher margin = more confident, but short text reduces confidence
+    // Exception: explicit markers are always high confidence regardless of length
     const absMargin = Math.abs(margin);
-    const lengthFactor = Math.min(f.charCount / 100, 1.0);
+    const hasExplicitMarker = f.hasUserMarker || f.hasAiMarker;
+    const lengthFactor = hasExplicitMarker ? 1.0 : Math.min(f.charCount / 100, 1.0);
     const localConfidence = sigmoid(absMargin - 1) * lengthFactor;
 
     return {

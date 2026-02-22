@@ -12,8 +12,8 @@ const RULE_LINE_RE = /^[\s]*[-_═╌─━]{3,}[\s]*$/;
 /** Explicit role header markers (inline or standalone) */
 const INLINE_HEADER_RE = /^[\s]*(User|You|あなた|あなたのプロンプト|自分|Human|Me|Assistant|AI|Gemini|ChatGPT|Claude|Bot|Anthropic|OpenAI|Guest|Support|Admin)(\s+(said|の回答|の返答|の))?[:：]\s*/i;
 
-/** Global version for mid-line splitting if necessary */
-const GLOBAL_HEADER_RE = /(?:^|\n)[\s]*(User|You|あなた|あなたのプロンプト|自分|Human|Me|Assistant|AI|Gemini|ChatGPT|Claude|Bot|Anthropic|OpenAI|Guest|Support|Admin)(\s+(said|の回答|の返答|の))?[:：]\s*/gi;
+/** Global version for mid-line splitting (anchorless to find markers anywhere) */
+const GLOBAL_HEADER_RE = /(?:^|\s)(User|You|あなた|あなたのプロンプト|自分|Human|Me|Assistant|AI|Gemini|ChatGPT|Claude|Bot|Anthropic|OpenAI|Guest|Support|Admin)(\s+(said|の回答|の返答|の))?[:：]\s*/gi;
 
 /** Check if a line starts with a role-marker header */
 function startsWithHeader(line: string): boolean {

@@ -6,6 +6,10 @@ import type { OptimizedBlock, Role } from './types';
 
 import { USER_MARKERS, ASSISTANT_MARKERS } from '../utils/markers';
 
+/** Inline role markers (e.g. "User: ..." or "AI: ...") */
+const INLINE_USER_RE = /^(User|You|Human|Me|Guest):/i;
+const INLINE_AI_RE = /^(Assistant|AI|Gemini|ChatGPT|Claude|Bot|GPT|Anthropic|OpenAI):/i;
+
 function isUserMarker(text: string): boolean {
     const t = text.trim();
     return USER_MARKERS.some(r => r.test(t));
@@ -14,6 +18,12 @@ function isUserMarker(text: string): boolean {
 function isAssistantMarker(text: string): boolean {
     const t = text.trim();
     return ASSISTANT_MARKERS.some(r => r.test(t));
+}
+
+/** Check if a block starts with an inline role marker like "User: ..." or "AI: ..." */
+function hasInlineRoleMarker(block: OptimizedBlock): boolean {
+    const firstLine = block.text.split('\n').find(l => l.trim())?.trim() ?? '';
+    return INLINE_USER_RE.test(firstLine) || INLINE_AI_RE.test(firstLine);
 }
 
 /**
@@ -73,6 +83,7 @@ export function postProcess(blocks: OptimizedBlock[]): OptimizedBlock[] {
     // If block[i] has a different role from block[i-1] and block[i+1],
     // and those two have the same role, and block[i]'s confidence is low,
     // absorb it into the surrounding role.
+    // NEVER absorb blocks with explicit inline role markers (e.g. "User:", "AI:")
     for (let i = 1; i < result.length - 1; i++) {
         const prev = result[i - 1];
         const curr = result[i];
@@ -81,7 +92,8 @@ export function postProcess(blocks: OptimizedBlock[]): OptimizedBlock[] {
         if (
             prev.role === next.role &&
             curr.role !== prev.role &&
-            curr.confidence < 0.5
+            curr.confidence < 0.5 &&
+            !hasInlineRoleMarker(curr)
         ) {
             result[i] = { ...curr, role: prev.role, confidence: curr.confidence * 0.8 };
         }
@@ -93,13 +105,14 @@ export function postProcess(blocks: OptimizedBlock[]): OptimizedBlock[] {
         const prev = merged[merged.length - 1];
         const curr = result[i];
 
-        // Merge if same role, both short, and no explicit markers
+        // Merge if same role, both short, and no explicit markers (standalone or inline)
         const prevIsShort = prev.features.charCount < 80;
         const currIsShort = curr.features.charCount < 80;
         const sameRole = prev.role === curr.role;
         const neitherIsMarker = getExplicitRole(prev) === null && getExplicitRole(curr) === null;
+        const neitherHasInlineMarker = !hasInlineRoleMarker(prev) && !hasInlineRoleMarker(curr);
 
-        if (sameRole && prevIsShort && currIsShort && neitherIsMarker) {
+        if (sameRole && prevIsShort && currIsShort && neitherIsMarker && neitherHasInlineMarker) {
             // Merge curr into prev
             merged[merged.length - 1] = {
                 ...prev,

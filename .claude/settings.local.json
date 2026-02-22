@@ -4,7 +4,19 @@
       "Bash(npm run build:*)",
       "Bash(git tag:*)",
       "Bash(git push:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npx tsc:*)",
+      "Bash(xargs:*)",
+      "Bash(grep:*)",
+      "Bash(curl:*)",
+      "Bash(source:*)",
+      "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npx vite 2>&1)",
+      "Bash(echo No process on 5173 found via netstat:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "WebSearch"
     ]
   }
 }

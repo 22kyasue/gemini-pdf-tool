@@ -1,0 +1,541 @@
+================================================================================
+  GEMINI PDF TOOL — コードベース完全まとめ
+  作成日: 2026-02-22
+================================================================================
+
+■ プロジェクト概要
+────────────────────────────────────────────────────────────────────────────────
+Gemini PDF Tool は、AIチャットログ（Gemini / ChatGPT / Claude 等）を解析し、
+User / AI に正確に分割して、見やすいPDFとして書き出すWebアプリケーションです。
+
+  総コード量:  約4,430行 / 43ファイル
+  技術スタック: React 19 + TypeScript 5.9 + Vite 7.3 + TailwindCSS 4.2
+  AI統合:      Claude API (claude-haiku-4.5) + ルールベースフォールバック
+  PDF生成:     html2pdf.js
+
+
+================================================================================
+■ アーキテクチャ全体図
+================================================================================
+
+  テキスト入力（ユーザーがチャットログを貼り付け）
+      │
+      ▼
+  ┌─────────────────────────────────────────┐
+  │  解析パイプライン（9ステップ）            │
+  │                                         │
+  │  1. normalize()      テキスト正規化       │
+  │  2. segment()        ブロック分割         │
+  │  3. extractFeatures() 特徴量抽出（24個）  │
+  │  4. scoreBlocks()    User/AIスコアリング  │
+  │  5. optimizeSequence() Viterbi最適化     │
+  │  6. postProcess()    後処理・重複排除     │
+  │  7. classify()       意図/成果物/話題分類  │
+  │  8. groupMessages()  意味的グループ化     │
+  │  9. smoothGroups()   ラベル伝播          │
+  └─────────────────────────────────────────┘
+      │
+      ▼
+  ┌─────────────────────────────────────────┐
+  │  Claude API 強化（オプション）            │
+  │  - splitChatWithClaude()  ← 核心機能     │
+  │  - テーブル復元                          │
+  │  - 要点抽出                              │
+  │  - ノイズ除去                            │
+  │  - セクション要約                        │
+  │  - ナラティブ目次生成                     │
+  └─────────────────────────────────────────┘
+      │
+      ▼
+  プレビュー表示 → ユーザー手動修正 → PDF書き出し
+
+
+================================================================================
+■ ファイル構成と各ファイルの役割
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+1. 解析パイプライン — src/algorithm/ （約2,000行）
+────────────────────────────────────────────────────────────────────────────────
+
+  index.ts（98行）
+    パイプラインオーケストレーター。
+    エクスポート: analyzeConversation()
+    全9ステップを順番に実行し、AnalysisResult を返す。
+
+  normalizer.ts（82行）
+    テキスト正規化。
+    エクスポート: normalize()
+    処理内容:
+      - 改行コード統一（CRLF → LF）
+      - Unicode NFKC正規化
+      - 不可視文字除去（ZWSP、BOM等）
+      - 全角スペース → 半角
+      - ゴミ行除去（UIボタンテキスト等）
+      - 過剰な空行圧縮（3行以上 → 2行）
+
+  segmenter.ts（304行）
+    テキストをブロックに分割。
+    エクスポート: segment()
+    ハード境界（必ず分割）:
+      - 2行以上の連続空行
+      - 罫線（---）
+      - 明示的ロールヘッダー（User:, Gemini の回答 等）
+    ソフト境界（条件付き分割）:
+      - 空行後の短い質問文（80文字以下で？終わり）
+      - 空行後の短文（60文字未満）+ 前ブロックが構造化テキスト
+      - 単独のURL / コマンド / ファイルパス
+    マージルール（過分割防止）:
+      - 連続する短いブロック（20文字未満）を結合
+      - 「これ見て」+ URL パターンの結合
+      - 不完全文（助詞終わり）の結合
+      - 同種の構造化コンテンツ（見出し/リスト）の結合
+      - リスト項目の継続結合
+
+  featureExtractor.ts（97行）
+    各ブロックから24個の特徴量を抽出。
+    エクスポート: extractAllFeatures()
+    抽出する特徴量:
+      - コンテンツ: charCount, lineCount, avgLineLength
+      - 構造: hasCodeBlock, hasMarkdownHeading, hasBulletList, hasTable
+      - 言語: hasQuestion, hasImperativeForm, hasJapanese, hasPoliteForm
+      - 成果物: hasUrl, hasFilePath, hasCommand, hasErrorKeyword
+      - スタイル: sentimentScore, technicalTermDensity, formality
+      - マーカー: hasUserMarker, hasAiMarker
+
+  roleScorer.ts（134行）
+    User/AIスコアリング。
+    エクスポート: scoreAllBlocks()
+    Userシグナル:
+      - 明示的マーカー: +15
+      - 短文（50文字未満）: +2
+      - 質問形: +3
+      - 命令形（して、作って）: +2
+      - エラーキーワード: +2
+      - カジュアルな口調: +2
+    AIシグナル:
+      - 明示的マーカー: +15
+      - 長文（200文字超）: +2
+      - 見出し: +3
+      - リスト: +2
+      - テーブル: +3
+      - コードブロック: +2
+      - 丁寧語: +1
+      - 説明構造（〜とは、つまり）: +2
+    ユーザー修正から学習した重みデルタも適用される。
+
+  sequenceOptimizer.ts（175行）
+    Viterbiアルゴリズムによるロール列最適化。
+    エクスポート: optimizeSequence()
+    HMMスタイルの前方・後方パスで文脈を考慮した最適なロール割り当てを計算。
+    遷移コスト: User→AI は自然（低コスト）、同ロール連続は不自然（高コスト）。
+
+  postProcessor.ts（167行）
+    最終調整。
+    エクスポート: postProcess()
+    処理内容:
+      1. 明示的マーカーブロックのロール強制
+      2. マーカーのロールを次のブロックに伝播
+      3. 孤立ブロックの吸収（同ロールに挟まれた低信頼ブロック）
+      4. 同ロールの短いブロック結合
+      5. マーカーのみのブロック除去
+      6. 意味的重複排除（Geminiエコー問題の修正）
+
+  intentClassifier.ts（177行）
+    意図分類（マルチラベル）。
+    エクスポート: classifyIntent()
+    分類カテゴリ:
+      Q（質問）, CMD（コマンド/指示）, INFO（情報提供）,
+      CONFIRM（確認）, ERROR（エラー報告）, PLAN（計画）, META（メタ発言）
+
+  artifactDetector.ts（160行）
+    成果物検出（マルチラベル）。
+    エクスポート: detectArtifacts()
+    検出カテゴリ:
+      CODE, LOG, PATH, LINK, TABLE, DOC, IMAGE_REF, CONFLICT
+
+  topicDictionary.ts（187行）
+    話題分類（キーワードベース）。
+    エクスポート: detectTopics(), detectTopicsDetailed(), getTopicDictionary()
+    15カテゴリ:
+      GIT, NPM, NODE, REACT, TYPESCRIPT, CSS, SUPABASE, FIREBASE,
+      AUTH, UI, BUG, DB, API, DEPLOY, TESTING, PC_SETTING, PYTHON, AI_ML
+
+  semanticGrouping.ts（168行）
+    メッセージのクラスタリング。
+    エクスポート: groupMessages()
+    Jaccard類似度（キーワード、重要語、エンティティ、話題）で隣接メッセージをグループ化。
+    閾値: 0.08（かなり緩い設定）。
+    強制境界: META意図、大きな話題シフト、成果物タイプの変化。
+
+  groupSmoothing.ts（131行）
+    グループ内ラベル伝播。
+    エクスポート: smoothGroups()
+    代表的なタグをグループ内で伝播し、Q→ANSWERパターンを検出。
+
+  correctionStore.ts（211行）
+    ユーザー修正の永続保存。
+    エクスポート: addRoleCorrection(), getWeightDeltas(), clearStore(), getStoreStats()
+    localStorageベース。ロール修正最大500件、構造修正最大200件。
+
+  weightUpdater.ts（163行）
+    修正からの重み学習。
+    エクスポート: recomputeWeights(), extractActiveFeatures()
+    30日半減期のリーセンシー重み付け。最大デルタ: 3.0。
+
+  llmDetector.ts（128行）
+    LLMソース自動検出。
+    エクスポート: detectLLMWithConfidence()
+    ChatGPT / Claude / Gemini / Unknown を信頼度付きで判定。
+
+
+────────────────────────────────────────────────────────────────────────────────
+2. ユーティリティ — src/utils/ （約900行）
+────────────────────────────────────────────────────────────────────────────────
+
+  llmParser.ts（211行）★ Claude API統合の核心
+    エクスポート:
+      - splitChatWithClaude()    ← メイン機能: テキスト全文をClaudeに送り、
+                                    User/AIのJSON配列に分割させる
+      - hasApiKey()              ← APIキーの有無確認
+      - getLastApiError()        ← 最後のAPIエラー取得（UI表示用）
+      - clearLastApiError()      ← エラー状態クリア
+      - recoverTableWithClaude() ← 崩れたデータをMarkdownテーブルに復元
+      - extractKeyPointsWithClaude() ← AI回答から要点3つを抽出
+      - removeNoiseWithClaude()  ← 会話のフィラー（不要な前置き等）除去
+      - generateSectionSummaryWithClaude() ← セクション要約（1-2文）
+      - generateNarrativeTOCWithClaude()   ← ナラティブ目次生成
+
+    APIキー取得順序:
+      1. localStorage（Settings UIで入力されたキー）
+      2. .env.local（VITE_ANTHROPIC_API_KEY）
+
+    エラーハンドリング:
+      - 401/403: 「APIキーが無効か失効」
+      - 429: 「レート制限」
+      - 400: リクエストエラー詳細表示
+      - 404: 「Viteプロキシ設定ミスの可能性」
+      - 529: 「API過負荷」
+      - ネットワークエラー: 「開発サーバー未起動の可能性」
+
+  chatParser.ts（91行）
+    レガシー正規表現パーサー。
+    エクスポート: parseChatLog(), detectLLM()
+    Claude APIが使えない場合のフォールバック。
+
+  pdfExport.ts（47行）
+    PDF生成。
+    エクスポート: exportToPdf()
+    html2pdf.jsでプレビューDOMをPDFに変換。
+    設定: A4縦、2倍スケール、15mm余白、白背景。
+    回避策: overflow:autoをvisibleに一時変更（html2canvasのバグ対策）。
+
+  markers.ts（59行）
+    ロールマーカー正規表現。
+    エクスポート: USER_MARKERS, ASSISTANT_MARKERS
+    Userマーカー: User, You, あなた, あなたのプロンプト, 自分, Human, Me 等
+    AIマーカー: Gemini, ChatGPT, Claude, Assistant, AI, Bot 等
+    日本語・英語両対応。
+
+  tableRecovery.ts（197行）
+    テーブル再構築。
+    エクスポート: recoverTables(), detectHasTable(), normalizeBold(),
+                  buildHtmlTable(), looksLikeTable(), splitColumns()
+    列分割の優先順位:
+      1. タブ区切り（最強）
+      2. 2つ以上の連続スペース
+      3. キーワード間のスペース
+      4. 区切りなしの連結キーワード
+      5. 貪欲なホワイトスペース分割
+    太字正規化: Geminiの「** テキスト **」（スペース付き）→ <strong>変換。
+
+  junkRemoval.ts（123行）
+    ゴミテキスト除去。
+    エクスポート: removeJunk(), removeTrailingInvitations()
+    除去対象:
+      - Gemini UIテキスト: 「回答案を表示」「Good response」「Copy」等
+      - 末尾の誘導文: 「もっと詳しく知りたいですか？」等
+
+  markdownRepair.ts（58行）
+    Markdown修復。
+    エクスポート: repairMarkdown(), beautifyCitations()
+    修復内容:
+      - 閉じ忘れたコードフェンス（```）の補完
+      - 閉じ忘れた太字（**）の補完
+      - 閉じ忘れたインラインコード（`）の補完
+      - [cite:1] や [1] → 上付きバッジに変換
+
+  keyPoints.ts（35行）
+    ルールベースの要点抽出。
+    エクスポート: extractKeyPoints()
+    優先順位: 太字フレーズ → 番号リスト → 見出し → 文。
+
+
+────────────────────────────────────────────────────────────────────────────────
+3. UIコンポーネント — src/components/ （約800行）
+────────────────────────────────────────────────────────────────────────────────
+
+  AnalyzedBlock.tsx
+    メッセージ表示の中心コンポーネント。
+    機能:
+      - ロールラベル + 信頼度バッジ（緑≥80%、黄≥50%、赤<50%）
+      - 意図/成果物/話題タグ表示
+      - ロール切替ボタン（User ↔ AI）
+      - 前ブロックとの結合ボタン
+      - 行単位の削除（ラインイレーサー）
+      - 折りたたみ/展開
+      - AI機能ボタン:
+        * テーブル復元（recoverTableWithClaude）
+        * 要点抽出（extractKeyPointsWithClaude）
+        * ノイズ除去（removeNoiseWithClaude）
+
+  SortableAnalyzedBlock.tsx（47行）
+    AnalyzedBlockのドラッグ&ドロップ対応ラッパー。
+    @dnd-kitを使用。左端にドラッグハンドル。
+
+  ContentRenderer.tsx
+    Markdown描画エンジン。
+    使用ライブラリ:
+      - react-markdown（Markdownパース）
+      - remark-gfm（GFMテーブル、取り消し線対応）
+      - rehype-raw（生HTML通過）
+      - カスタム: Mermaidダイアグラム、引用バッジ、コードコピーボタン
+
+  ChapterDivider.tsx
+    セマンティックグループの区切り線。
+    セクション番号、話題タグ、AI生成の要約を表示。
+
+  TableOfContents.tsx
+    目次コンポーネント。
+    2モード:
+      - 新アルゴリズム: セマンティックグループ + ナラティブフロー
+      - レガシー: ターンペア + 質問サマリー
+    テーブルがある場合は[表あり]バッジ表示。
+
+  TurnBlock.tsx
+    レガシーモードのメッセージ表示。
+    単純な交互表示。
+
+  LLMSelector.tsx
+    LLMソース選択ドロップダウン。
+    自動検出結果を表示し、手動オーバーライド可能。
+
+  PdfPrintHeader.tsx
+    PDFヘッダー。ブランディングとメタデータ。
+
+  Mermaid.tsx
+    Mermaidダイアグラム描画コンポーネント。
+
+  CitationBadge.tsx
+    引用上付きバッジ。
+
+  ErrorBoundary.tsx
+    Reactエラーバウンダリ。
+    レンダリングエラー時に「このブロックの表示に失敗しました」を表示。
+
+
+────────────────────────────────────────────────────────────────────────────────
+4. メインコンポーネント — src/App.tsx（607行）
+────────────────────────────────────────────────────────────────────────────────
+
+  マルチソース管理:
+    - 複数のチャットログを追加/削除/切替
+    - 各ソースにタイトル、コンテンツ、LLM種別
+
+  デュアルモード:
+    - Algo（新アルゴリズム）: 9ステップパイプライン + Claude API
+    - Legacy（レガシー）: 正規表現ベースのパーサー
+
+  AI分割フロー:
+    1. analyzeConversation() で即座にregex結果を表示
+    2. hasApiKey() が true なら splitChatWithClaude() を並行実行
+    3. 成功 → AI結果でregex結果を上書き（緑バナー表示）
+    4. 失敗 → エラー内容を赤バナーで表示、regex結果をそのまま使用
+
+  エラーフィードバック:
+    - API失敗時: 赤いバナーで具体的なエラーメッセージ表示
+    - API成功時: 緑のバナー「AI セマンティック分割で解析済み」
+    - Settingsでキー変更 → 即座に再解析
+
+  学習ループ:
+    ロール修正 → addRoleCorrection() → recomputeWeights() → 次回解析に反映
+
+  状態管理:
+    - sources: Source[]（タイトル、コンテンツ、LLM）
+    - editedMessages: AnalyzedMessage[] | null（ユーザー修正後のメッセージ）
+    - editedGroups: SemanticGroup[] | null（ユーザー修正後のグループ）
+    - aiResults: Record<number, {...}>（AI機能の結果キャッシュ）
+    - theme: 'light' | 'dark'
+    - aiEnabled: boolean（AI機能のON/OFF）
+    - anthropicApiKey: string（Settings UIのキー）
+    - useNewAlgo: boolean（アルゴリズム切替）
+    - pdfTemplate: 'professional' | 'academic' | 'executive'
+
+  PDF書き出し:
+    プレビューDOMをhtml2pdfでA4 PDFに変換してダウンロード。
+
+
+────────────────────────────────────────────────────────────────────────────────
+5. フックとヘルパー — src/hooks/
+────────────────────────────────────────────────────────────────────────────────
+
+  useTextHistory.ts（66行）
+    テキストエリアのUndo/Redo機能。最大50スナップショット。
+
+
+────────────────────────────────────────────────────────────────────────────────
+6. 型定義
+────────────────────────────────────────────────────────────────────────────────
+
+  src/types.ts（18行）
+    共有型: Role ('user' | 'ai'), LLMName, Turn インターフェース
+
+  src/algorithm/types.ts（135行）
+    パイプライン用型:
+      - SegmentedBlock: 分割後のブロック
+      - BlockFeatures: 24個の特徴量
+      - FeaturedBlock: 特徴量付きブロック
+      - ScoredBlock: スコア付きブロック
+      - OptimizedBlock: 最適化後のブロック
+      - AnalyzedMessage: 最終的なメッセージ（ロール、信頼度、意図、話題等）
+      - SemanticGroup: 意味的グループ
+      - AnalysisResult: パイプライン全体の出力
+      - IntentTag: 意図タグの型
+      - ArtifactTag: 成果物タグの型
+
+
+================================================================================
+■ データフロー詳細図
+================================================================================
+
+  ユーザーがチャットログを貼り付け
+          │
+          ▼
+    ┌── analyzeConversation() ── 即座にregex結果をプレビューに表示
+    │
+    ├── splitChatWithClaude() ── APIキーがあればAI分割を並行実行
+    │   │
+    │   ├─ 成功 → AI結果でregex結果を上書き
+    │   │         緑バナー「AI セマンティック分割で解析済み」
+    │   │
+    │   └─ 失敗 → 赤バナーでエラー内容を表示
+    │             regex結果をそのまま使用（フォールバック）
+    │
+    ├── generateNarrativeTOCWithClaude() ── ナラティブ目次生成
+    │
+    ├── ユーザーが手動修正（ロール切替、ブロック結合、並べ替え等）
+    │   │
+    │   └─ 修正データ → correctionStore → weightUpdater → 次回解析に反映
+    │
+    └── PDF書き出しボタン
+        │
+        ▼
+    html2pdf.js → プレビューDOMをPDFに変換 → ブラウザダウンロード
+
+
+================================================================================
+■ 外部依存関係
+================================================================================
+
+  依存パッケージ              用途                     状態
+  ─────────────────────────────────────────────────────────────────
+  Claude API (Anthropic)      セマンティック分割等     動作確認済み
+  @google/generative-ai       Gemini API              未使用（残骸）
+  html2pdf.js                 PDF生成                 動作中
+  react-markdown              Markdown描画            動作中
+  remark-gfm                  GFMテーブル対応          動作中
+  rehype-raw                  生HTML通過              動作中
+  mermaid                     ダイアグラム描画         動作中
+  @dnd-kit                    ドラッグ&ドロップ         動作中
+  lucide-react                アイコン                動作中
+
+
+================================================================================
+■ 設定値一覧
+================================================================================
+
+  項目                    値
+  ─────────────────────────────────────────────────────────────────
+  Viteプロキシ            /api/anthropic → https://api.anthropic.com
+  APIキー取得順           localStorage → .env.local
+  使用モデル              claude-haiku-4-5-20251001
+  テキスト送信上限        30,000文字（トランケート）
+  API最大トークン         8,192（分割用）/ 4,096（その他）
+  ロール修正保存上限      500件
+  構造修正保存上限        200件
+  重みデルタ上限          3.0
+  学習半減期              30日
+  セマンティック類似閾値  0.08
+  PDFテンプレート         professional / academic / executive
+  PDF余白                 15mm（全方向）
+  PDF用紙                 A4 縦
+
+
+================================================================================
+■ エクスポート関数一覧
+================================================================================
+
+【解析パイプライン】
+  analyzeConversation()     パイプライン全体実行
+  normalize()               テキスト正規化
+  segment()                 ブロック分割
+  extractAllFeatures()      特徴量抽出
+  scoreAllBlocks()          User/AIスコアリング
+  optimizeSequence()        Viterbi最適化
+  postProcess()             後処理
+  classifyIntent()          意図分類
+  detectArtifacts()         成果物検出
+  detectTopics()            話題分類
+  detectTopicsDetailed()    話題分類（詳細）
+  getTopicDictionary()      話題辞書取得
+  groupMessages()           メッセージクラスタリング
+  smoothGroups()            ラベル伝播
+  addRoleCorrection()       ロール修正記録
+  getWeightDeltas()         学習済み重み取得
+  clearStore()              学習データクリア
+  getStoreStats()           学習統計取得
+  recomputeWeights()        重み再計算
+  detectLLMWithConfidence() LLMソース検出
+
+【Claude API統合】
+  splitChatWithClaude()             セマンティック分割（核心機能）
+  hasApiKey()                       APIキー有無確認
+  getLastApiError()                 最後のAPIエラー取得
+  clearLastApiError()               エラー状態クリア
+  recoverTableWithClaude()          テーブル復元
+  extractKeyPointsWithClaude()      要点抽出
+  removeNoiseWithClaude()           ノイズ除去
+  generateSectionSummaryWithClaude() セクション要約
+  generateNarrativeTOCWithClaude()  ナラティブ目次
+
+【ユーティリティ】
+  parseChatLog()            レガシーパーサー
+  detectLLM()               LLM検出（レガシー）
+  exportToPdf()             PDF書き出し
+  removeJunk()              ゴミテキスト除去
+  removeTrailingInvitations() 末尾誘導文除去
+  recoverTables()           テーブル再構築
+  detectHasTable()          テーブル有無判定
+  normalizeBold()           太字正規化
+  repairMarkdown()          Markdown修復
+  beautifyCitations()       引用バッジ変換
+  extractKeyPoints()        要点抽出（ルールベース）
+
+【Reactコンポーネント】
+  App                       メインアプリケーション
+  AnalyzedBlock             メッセージ表示
+  SortableAnalyzedBlock     ドラッグ対応メッセージ
+  ContentRenderer           Markdown描画
+  ChapterDivider            セクション区切り
+  TableOfContents           目次
+  TurnBlock                 レガシーメッセージ表示
+  LLMSelector               LLM選択
+  PdfPrintHeader            PDFヘッダー
+  Mermaid                   ダイアグラム描画
+  CitationBadge             引用バッジ
+  ErrorBoundary             エラーバウンダリ
+
+
+================================================================================
+  以上
+================================================================================

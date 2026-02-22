@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { User, Bot, ChevronDown, ChevronUp, Merge, Eraser, X, Plus, ShieldAlert, AlertTriangle, Loader2 } from 'lucide-react';
+import { User, Bot, ChevronDown, ChevronUp, Merge, Eraser, X, Plus, ShieldAlert, AlertTriangle, Loader2, Key } from 'lucide-react';
 import type { AnalyzedMessage } from '../algorithm';
 import { ContentRenderer } from './ContentRenderer';
 import { recoverTableWithGemini, extractKeyPointsWithGemini, removeNoiseWithGemini } from '../utils/llmParser';
@@ -20,6 +20,9 @@ export function AnalyzedBlock({
     onSetResult,
     isFirst,
     forceExpand = false,
+    hasApiKey,
+    aiEnabled,
+    onOpenSettings,
 }: {
     msg: AnalyzedMessage;
     onRoleToggle: (id: number) => void;
@@ -35,6 +38,9 @@ export function AnalyzedBlock({
     onSetResult: (key: string, val: any) => void;
     isFirst: boolean;
     forceExpand?: boolean;
+    hasApiKey: boolean;
+    aiEnabled: boolean;
+    onOpenSettings: () => void;
 }) {
     const isUser = msg.role === 'user';
     const [collapsed, setCollapsed] = useState(false);
@@ -61,6 +67,7 @@ export function AnalyzedBlock({
 
     // 1. Table Recovery
     useEffect(() => {
+        if (!aiEnabled) return;
         const text = msg.text;
         const hasMarkdownTable = /\|.*\|/.test(text);
         const looksLikeTable = !hasMarkdownTable && msg.role === 'ai' && (
@@ -82,10 +89,11 @@ export function AnalyzedBlock({
             };
             runRecovery();
         }
-    }, [msg.text, msg.role, recoveredText, isRecovering, hasAttemptedRecovery]);
+    }, [msg.text, msg.role, recoveredText, isRecovering, hasAttemptedRecovery, aiEnabled]);
 
     // 2. Key Points Extraction
     useEffect(() => {
+        if (!aiEnabled) return;
         if (msg.role === 'ai' && !keyPoints && !isExtractingPoints && msg.text.length > 50 && !hasAttemptedExtraction) {
             const runExtraction = async () => {
                 setIsExtractingPoints(true);
@@ -107,10 +115,11 @@ export function AnalyzedBlock({
             };
             runExtraction();
         }
-    }, [msg.text, msg.role, keyPoints, isExtractingPoints, hasAttemptedExtraction, onSetResult]);
+    }, [msg.text, msg.role, keyPoints, isExtractingPoints, hasAttemptedExtraction, onSetResult, aiEnabled]);
 
     // 3. Noise Removal (Cleansing)
     useEffect(() => {
+        if (!aiEnabled) return;
         if (msg.role === 'ai' && !cleanedText && !isCleaning && msg.text.length > 30 && !hasAttemptedCleaning) {
             const runCleansing = async () => {
                 setIsCleaning(true);
@@ -126,7 +135,7 @@ export function AnalyzedBlock({
             };
             runCleansing();
         }
-    }, [msg.text, msg.role, cleanedText, isCleaning, hasAttemptedCleaning, onSetResult]);
+    }, [msg.text, msg.role, cleanedText, isCleaning, hasAttemptedCleaning, onSetResult, aiEnabled]);
 
     const handleEraseLine = (lineIndex: number) => {
         const lines = msg.text.split('\n');
@@ -247,6 +256,14 @@ export function AnalyzedBlock({
                             <ShieldAlert size={16} className="text-rose-500" />
                             <p className="text-[11px] font-bold text-rose-700">DIVERGENCE DETECTED</p>
                             <AlertTriangle size={14} className="text-rose-300 ml-auto" />
+                        </div>
+                    )}
+
+                    {!isUser && !hasApiKey && (
+                        <div className="ai-key-warning no-print">
+                            <Key size={14} />
+                            <span>AI features require a Gemini API key.</span>
+                            <button className="ai-key-warning-btn" onClick={onOpenSettings}>Add Key</button>
                         </div>
                     )}
 

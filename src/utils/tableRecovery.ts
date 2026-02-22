@@ -24,11 +24,17 @@ export const KEYWORD_DICT: string[] = [
 /** Greedy keyword segmentation of a line (no separator — e.g. "年齢層推奨される傾向理由") */
 function splitByKeywords(line: string): string[] | null {
     const segments: string[] = [];
-    let rem = line.trim();
-    while (rem.length > 0) {
-        const kw = KEYWORD_DICT.find(k => rem.startsWith(k));
-        if (kw) { segments.push(kw); rem = rem.slice(kw.length); }
-        else return null;
+    let pos = 0;
+    const trimmed = line.trim();
+    while (pos < trimmed.length) {
+        const remaining = trimmed.slice(pos);
+        const kw = KEYWORD_DICT.find(k => remaining.startsWith(k));
+        if (kw) {
+            segments.push(kw);
+            pos += kw.length;
+        } else {
+            return null;
+        }
     }
     return segments.length >= 2 ? segments : null;
 }
@@ -58,7 +64,7 @@ export function splitColumns(line: string, expectedCount?: number): string[] {
 
     // 3. Single space between known keywords (e.g. "年齢層 推奨される傾向 理由")
     const singleSpaceTokens = t.split(' ').map(c => c.trim()).filter(c => c);
-    
+
     // If we have an expected count, try whitespace split
     if (expectedCount && singleSpaceTokens.length === expectedCount) {
         return singleSpaceTokens;
@@ -89,12 +95,12 @@ export function looksLikeTable(lines: string[]): boolean {
     const firstLine = lines[0];
     const headerCells = splitColumns(firstLine);
     const colCount = headerCells.length;
-    
+
     if (colCount < 2) return false;
 
     // Is the header "strong"? (contains keywords)
     const hasKnownKeyword = headerCells.some(cell => KEYWORD_DICT.includes(cell.trim()));
-    
+
     // 2. Check subsequent lines
     // For subsequent lines, we use splitColumns with expectedCount to be more lenient
     const rows = lines.slice(1).map(l => splitColumns(l, colCount));
@@ -117,7 +123,7 @@ export function buildHtmlTable(lines: string[]): string {
     const headerCols = splitColumns(lines[0]);
     const colCount = headerCols.length;
     const rows = lines.map(l => splitColumns(l, colCount));
-    
+
     const [header, ...body] = rows;
     const ths = header.map(h => `<th>${h}</th>`).join('');
     const trs = body.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('\n');
