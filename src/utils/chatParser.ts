@@ -74,7 +74,7 @@ export function parseChatLog(raw: string): { turns: Turn[]; llm: LLMName } {
         const isAssistant = seg.role === 'assistant';
         const content = isAssistant
             ? beautifyCitations(repairMarkdown(normalizeBold(recoverTables(removeTrailingInvitations(rawContent)))))
-            : rawContent;
+            : repairMarkdown(normalizeBold(rawContent));
         turns.push({
             role: seg.role,
             llmLabel: seg.llmLabel,

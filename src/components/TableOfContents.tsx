@@ -4,7 +4,7 @@ import type { AnalyzedMessage, SemanticGroup } from '../algorithm/types';
 
 // ══════════════════════════════════════════════════════════
 // TABLE OF CONTENTS
-// Intelligent TOC with [表あり] badges.
+// Intelligent TOC with [Table] badges.
 // Supports Narrative Flow (LLM) and detailed indexing.
 // ══════════════════════════════════════════════════════════
 
@@ -26,7 +26,7 @@ export function TableOfContents({
             <div className={containerClass}>
                 <div className="toc-header">
                     <Zap size={14} strokeWidth={2.5} className="text-indigo-500" />
-                    <span>AI セマンティック目次</span>
+                    <span>AI Semantic Index</span>
                 </div>
 
                 {narrative && (
@@ -54,7 +54,7 @@ export function TableOfContents({
                                         {firstMsg.text.split('\n').find(l => l.trim())?.trim().slice(0, 60)}…
                                     </div>
                                 </div>
-                                {hasTable && <span className="toc-badge"><Table size={10} strokeWidth={2} />表あり</span>}
+                                {hasTable && <span className="toc-badge"><Table size={10} strokeWidth={2} />Table</span>}
                             </a>
                         );
                     })}
@@ -72,13 +72,13 @@ export function TableOfContents({
 
     return (
         <div className={containerClass}>
-            <div className="toc-header"><List size={14} strokeWidth={2} /><span>目次・インデックス</span></div>
+            <div className="toc-header"><List size={14} strokeWidth={2} /><span>Table of Contents</span></div>
             <ol className="toc-list">
                 {pairs.map(({ user, assistant }) => (
                     <li key={user.index}>
                         <a href={`#turn-${user.index}`} className="toc-link">
                             <span className="toc-q">{user.summary}</span>
-                            {assistant?.hasTable && <span className="toc-badge"><Table size={10} strokeWidth={2} />表あり</span>}
+                            {assistant?.hasTable && <span className="toc-badge"><Table size={10} strokeWidth={2} />Table</span>}
                         </a>
                     </li>
                 ))}

@@ -16,7 +16,12 @@
       "Bash(taskkill:*)",
       "Bash(cd:*)",
       "Bash(ls:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(tail:*)",
+      "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm run dev 2>&1)",
+      "Bash(python3:*)",
+      "Bash(cat:*)",
+      "Bash(tasklist 2>/dev/null | grep -i node | head -20 || ps aux | grep node | head -20)"
     ]
   }
 }

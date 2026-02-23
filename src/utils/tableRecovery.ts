@@ -119,14 +119,23 @@ export function looksLikeTable(lines: string[]): boolean {
     return true;
 }
 
+/** Escape HTML special characters to prevent XSS */
+function escapeHtml(text: string): string {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 export function buildHtmlTable(lines: string[]): string {
     const headerCols = splitColumns(lines[0]);
     const colCount = headerCols.length;
     const rows = lines.map(l => splitColumns(l, colCount));
 
     const [header, ...body] = rows;
-    const ths = header.map(h => `<th>${h}</th>`).join('');
-    const trs = body.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('\n');
+    const ths = header.map(h => `<th>${escapeHtml(h)}</th>`).join('');
+    const trs = body.map(r => `<tr>${r.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('\n');
     return `<div class="smart-table-wrap">\n<table class="smart-table">\n<thead><tr>${ths}</tr></thead>\n<tbody>${trs}</tbody>\n</table>\n</div>`;
 }
 

@@ -20,9 +20,15 @@ export class ErrorBoundary extends Component<
     state = { error: false };
     static getDerivedStateFromError() { return { error: true }; }
     componentDidCatch() { this.props.onError?.(); }
+    componentDidUpdate(prevProps: { children: ReactNode }) {
+        // Reset error state when children change so recovered content can render
+        if (this.state.error && prevProps.children !== this.props.children) {
+            this.setState({ error: false });
+        }
+    }
     render() {
         if (this.state.error)
-            return <div className="render-error-hint">⚠ このブロックの表示に失敗しました</div>;
+            return <div className="render-error-hint" role="alert">⚠ Failed to render this block</div>;
         return this.props.children;
     }
 }

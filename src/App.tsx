@@ -3,9 +3,11 @@ import {
   FileText, Download, User, Table, Zap,
   GraduationCap, Briefcase,
   Layout, Plus, Trash, Settings, X,
-  Sun, Moon, Terminal
+  Sun, Moon, Terminal, Check, FileQuestion,
+  Sparkles, Upload, FileDown, Edit3, Eye
 } from 'lucide-react';
-import { splitChatWithGemini, hasApiKey, getLastApiError, clearLastApiError } from './utils/llmParser';
+import { splitChatWithGemini, enhanceContentWithGemini, hasApiKey, getLastApiError, clearLastApiError } from './utils/llmParser';
+import type { TokenUsage, ApiFeature } from './utils/llmParser';
 
 // -- Types --
 import type { Turn, LLMName } from './types';
@@ -25,12 +27,25 @@ import { exportToPdf } from './utils/pdfExport';
 import { TurnBlock } from './components/TurnBlock';
 import { TableOfContents } from './components/TableOfContents';
 import { LLMSelector } from './components/LLMSelector';
+import type { SimpleLLM } from './components/LLMSelector';
 import { PdfPrintHeader } from './components/PdfPrintHeader';
 import { _onRenderError } from './components/ErrorBoundary';
 
-// -- LLM Detection --
-import { detectLLMWithConfidence } from './algorithm/llmDetector';
-import type { LLMType } from './algorithm/llmDetector';
+// -- Markdown export utility --
+function generateMarkdown(turns: Turn[], llm: string): string {
+  const lines: string[] = [`# ${llm} Dialogue Archive\n`, `Exported: ${new Date().toLocaleString('en-US')}\n`, '---\n'];
+  for (const turn of turns) {
+    lines.push(turn.role === 'user' ? '## User\n' : `## ${turn.llmLabel || 'AI'}\n`);
+    lines.push(turn.content + '\n');
+    lines.push('---\n');
+  }
+  return lines.join('\n');
+}
+
+// -- localStorage keys --
+const LS_SOURCES = 'draft_sources';
+const LS_ACTIVE = 'draft_activeSourceId';
+const LS_TEMPLATE = 'draft_pdfTemplate';
 
 const SAMPLE = `あなたのプロンプト
 Gemini, can you analyze the Q3 growth projection for our green tech sector? I need a breakdown of the efficiency gains.
@@ -58,12 +73,25 @@ The narrative follows a "Investment -> Innovation -> Efficiency" cycle.
 This confirms our 2026 sustainability targets are achievable ahead of schedule.`;
 
 export default function App() {
-  const [sources, setSources] = useState<Source[]>([
-    { id: 'initial', title: 'Main Session', content: SAMPLE, llm: 'Gemini' }
-  ]);
-  const [activeSourceId, setActiveSourceId] = useState<string>('initial');
-  const [pdfTemplate, setPdfTemplate] = useState<'professional' | 'academic' | 'executive'>('professional');
-  const [llmOverride, setLlmOverride] = useState<LLMType | null>(null);
+  const [sources, setSources] = useState<Source[]>(() => {
+    try {
+      const saved = localStorage.getItem(LS_SOURCES);
+      if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) return parsed; }
+    } catch {}
+    return [{ id: 'initial', title: 'Main Session', content: SAMPLE, llm: 'Gemini' }];
+  });
+  const [activeSourceId, setActiveSourceId] = useState<string>(() => {
+    return localStorage.getItem(LS_ACTIVE) || sources[0]?.id || 'initial';
+  });
+  const [pdfTemplate, setPdfTemplate] = useState<'professional' | 'academic' | 'executive'>(() => {
+    const saved = localStorage.getItem(LS_TEMPLATE);
+    if (saved === 'professional' || saved === 'academic' || saved === 'executive') return saved;
+    return 'professional';
+  });
+
+  // Mobile tab state
+  const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
+  // LLM override removed — selector is now read-only display
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [parseErrorToast, setParseErrorToast] = useState(false);
@@ -72,15 +100,33 @@ export default function App() {
   const [googleApiKey, setGoogleApiKey] = useState(() => localStorage.getItem('googleApiKey') || '');
   const [apiTestResult, setApiTestResult] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
 
+  // -- API Processing Options --
+  const [apiFeatures, setApiFeatures] = useState<Set<ApiFeature>>(() => {
+    const saved = localStorage.getItem('apiFeatures');
+    if (saved) try { return new Set(JSON.parse(saved)); } catch {}
+    return new Set<ApiFeature>(['split', 'format', 'tables', 'code']);
+  });
+
+  const toggleFeature = (f: ApiFeature) => {
+    setApiFeatures(prev => {
+      const next = new Set(prev);
+      if (f === 'split') return next; // split is always on
+      if (next.has(f)) next.delete(f); else next.add(f);
+      localStorage.setItem('apiFeatures', JSON.stringify([...next]));
+      lastAiSplitRef.current = ''; // re-trigger API with new features
+      return next;
+    });
+  };
+
   // -- API Console Logs --
   interface LogEntry { time: string; level: 'info' | 'warn' | 'error' | 'success'; msg: string; }
   const [apiLogs, setApiLogs] = useState<LogEntry[]>([]);
   const logScrollRef = useRef<HTMLDivElement>(null);
 
+  // Store original console refs once at module-level to prevent StrictMode double-wrap
+  const origConsole = useRef({ log: console.log, warn: console.warn, error: console.error });
   useEffect(() => {
-    const origLog = console.log;
-    const origWarn = console.warn;
-    const origError = console.error;
+    const orig = origConsole.current;
     const ts = () => new Date().toLocaleTimeString('ja-JP', { hour12: false });
 
     const push = (level: LogEntry['level'], args: any[]) => {
@@ -90,11 +136,11 @@ export default function App() {
       setApiLogs(prev => [...prev.slice(-99), { time: ts(), level: finalLevel, msg: text }]);
     };
 
-    console.log = (...args) => { push('info', args); origLog.apply(console, args); };
-    console.warn = (...args) => { push('warn', args); origWarn.apply(console, args); };
-    console.error = (...args) => { push('error', args); origError.apply(console, args); };
+    console.log = (...args: any[]) => { push('info', args); orig.log.apply(console, args); };
+    console.warn = (...args: any[]) => { push('warn', args); orig.warn.apply(console, args); };
+    console.error = (...args: any[]) => { push('error', args); orig.error.apply(console, args); };
 
-    return () => { console.log = origLog; console.warn = origWarn; console.error = origError; };
+    return () => { console.log = orig.log; console.warn = orig.warn; console.error = orig.error; };
   }, []);
 
   useEffect(() => {
@@ -115,6 +161,59 @@ export default function App() {
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
+  // -- Auto-save drafts --
+  useEffect(() => {
+    localStorage.setItem(LS_SOURCES, JSON.stringify(sources));
+  }, [sources]);
+  useEffect(() => {
+    localStorage.setItem(LS_ACTIVE, activeSourceId);
+  }, [activeSourceId]);
+  useEffect(() => {
+    localStorage.setItem(LS_TEMPLATE, pdfTemplate);
+  }, [pdfTemplate]);
+
+  // -- Drag-and-drop file support --
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current++;
+    if (e.dataTransfer.types.includes('Files')) setIsDragging(true);
+  }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current--;
+    if (dragCounter.current === 0) setIsDragging(false);
+  }, []);
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    dragCounter.current = 0;
+    const file = e.dataTransfer.files?.[0];
+    if (file && (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md'))) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result as string;
+        setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: text } : s));
+      };
+      reader.readAsText(file);
+    }
+  }, [activeSourceId]);
+
+  // -- Keyboard shortcuts (use ref to avoid stale closure) --
+  const exportPdfRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key === 'p') { e.preventDefault(); exportPdfRef.current(); }
+      if (ctrl && e.key === ',') { e.preventDefault(); setShowSettings(true); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   // Separate draft (live typing) from committed key (saved on blur/Done)
   const [apiKeyDraft, setApiKeyDraft] = useState(googleApiKey);
 
@@ -129,7 +228,18 @@ export default function App() {
 
   const activeSource = sources.find(s => s.id === activeSourceId) || sources[0];
 
+  const INPUT_CHAR_LIMIT = 500_000;
+  const [inputWarning, setInputWarning] = useState<string | null>(null);
+
   const handleUpdateSourceContent = (val: string) => {
+    if (val.length > INPUT_CHAR_LIMIT) {
+      setInputWarning(`Input truncated to ${(INPUT_CHAR_LIMIT / 1000).toFixed(0)}K characters to prevent performance issues.`);
+      const truncated = val.slice(0, INPUT_CHAR_LIMIT);
+      setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: truncated } : s));
+      setTimeout(() => setInputWarning(null), 4000);
+      return;
+    }
+    setInputWarning(null);
     setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: val } : s));
   };
 
@@ -165,9 +275,19 @@ export default function App() {
   const deferredSources = useDeferredValue(sources);
   const sourceContents = useMemo(() => deferredSources.map(s => s.content).join('\n---\n'), [deferredSources]);
 
-  // ── Gemini marker detection ──
-  const hasGeminiMarkers = useMemo(() => {
-    return /あなたのプロンプト|Gemini の回答|Gemini の返答/i.test(sourceContents);
+  // ── Direct marker detection ──
+  // If the pasted text has clear role markers the regex parser handles well,
+  // skip the API entirely (saves tokens). Covers Gemini JP, ChatGPT JP, etc.
+  const hasDirectMarkers = useMemo(() => {
+    // Gemini Japanese format
+    if (/あなたのプロンプト|Gemini の回答|Gemini の返答/.test(sourceContents)) return true;
+    // ChatGPT Japanese format  (あなた: + ChatGPT:)
+    if (/^あなた[:：]\s*/m.test(sourceContents) && /^ChatGPT[:：]\s*/mi.test(sourceContents)) return true;
+    // Claude Japanese format
+    if (/^あなた[:：]\s*/m.test(sourceContents) && /^Claude[:：]\s*/mi.test(sourceContents)) return true;
+    // English explicit markers (You said: + X said:)
+    if (/^You said:?\s*$/mi.test(sourceContents) && /^(ChatGPT|Claude|Gemini) said:?\s*$/mi.test(sourceContents)) return true;
+    return false;
   }, [sourceContents]);
 
   // ── Legacy parser: always runs for all text ──
@@ -181,40 +301,62 @@ export default function App() {
   const [isClassifying, setIsClassifying] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [splitMethod, setSplitMethod] = useState<'regex' | 'gemini-api' | 'none'>('none');
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const lastAiSplitRef = useRef<string>('');
+  const apiRequestIdRef = useRef(0);
 
   // Reset override when source text changes or API key changes
   useEffect(() => {
     setOverrideTurns(null);
     setApiError(null);
+    setTokenUsage(null);
     lastAiSplitRef.current = '';
-    if (hasGeminiMarkers) {
+    if (hasDirectMarkers) {
       setSplitMethod('regex');
     } else {
       setSplitMethod('none');
     }
-  }, [sourceContents, hasGeminiMarkers, googleApiKey]);
+  }, [sourceContents, hasDirectMarkers, googleApiKey]);
 
   // ── Gemini API for non-Gemini chats ──
+  // Skip API for large documents (>20k words) to avoid excessive token usage.
+  // The regex parser handles ChatGPT/Claude formats well via marker detection.
+  const WORD_LIMIT_FOR_API = 20_000;
+
   useEffect(() => {
-    if (hasGeminiMarkers) { console.log('[Flow] Gemini markers found → regex only, no API'); return; }
+    if (hasDirectMarkers) { console.log('[Flow] Gemini markers found → regex only, no API'); return; }
     const rawText = deferredSources.map(s => s.content).join('\n---\n').trim();
     if (!rawText) { console.log('[Flow] Empty text → skip API'); return; }
     if (!hasApiKey()) { console.log('[Flow] No API key → skip API'); return; }
     if (rawText === lastAiSplitRef.current) { console.log('[Flow] Same text as last call → skip API'); return; }
 
-    console.log(`[Flow] Non-Gemini text detected (${rawText.length} chars), scheduling API call in 1.5s...`);
+    // Large documents: fall back to regex to avoid burning tokens
+    const wordCount = rawText.split(/\s+/).length;
+    if (wordCount > WORD_LIMIT_FOR_API) {
+      console.log(`[Flow] Large document (${wordCount} words > ${WORD_LIMIT_FOR_API}) → regex only, skipping API`);
+      setSplitMethod('regex');
+      return;
+    }
 
+    console.log(`[Flow] Non-Gemini text detected (${rawText.length} chars), scheduling API call in 300ms...`);
+
+    const requestId = ++apiRequestIdRef.current;
     const timer = setTimeout(() => {
       console.log('[Flow] Timer fired → calling splitChatWithGemini...');
       lastAiSplitRef.current = rawText;
       setIsClassifying(true);
       setApiError(null);
 
-      splitChatWithGemini(rawText).then(aiMessages => {
-        if (aiMessages && aiMessages.length > 0) {
+      splitChatWithGemini(rawText, apiFeatures).then(result => {
+        // Discard stale responses
+        if (requestId !== apiRequestIdRef.current) {
+          console.log('[Flow] Discarding stale API response');
+          return;
+        }
+        if (result && result.messages.length > 0) {
+          setTokenUsage(result.tokens);
           // Convert AISplitMessage[] to Turn[]
-          const converted: Turn[] = aiMessages.map((msg, i) => ({
+          const converted: Turn[] = result.messages.map((msg, i) => ({
             role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
             llmLabel: msg.role === 'user' ? 'USER' : 'AI',
             content: msg.content,
@@ -233,39 +375,203 @@ export default function App() {
           setSplitMethod('none');
         }
       }).catch(err => {
+        if (requestId !== apiRequestIdRef.current) return;
         console.error("AI split failed:", err);
-        setApiError(`AI分割エラー: ${err.message}`);
+        setApiError(`Split error: ${err.message}`);
         setSplitMethod('none');
       }).finally(() => {
-        setIsClassifying(false);
+        if (requestId === apiRequestIdRef.current) setIsClassifying(false);
       });
-    }, 1500);
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [sourceContents, hasGeminiMarkers, googleApiKey]);
+  }, [sourceContents, hasDirectMarkers, googleApiKey, apiFeatures]);
+
+  // ── Gemini-marker chats: user-triggered enhance for code/latex ──
+  const [enhanceDismissed, setEnhanceDismissed] = useState(false);
+  const enhanceCancelledRef = useRef(false);
+
+  // Reset dismissed state when source changes
+  useEffect(() => {
+    setEnhanceDismissed(false);
+  }, [sourceContents]);
+
+  // Show the enhance prompt when: Gemini markers + API key + any enhance feature enabled + not already enhanced
+  const hasAnyEnhanceFeature = apiFeatures.has('format') || apiFeatures.has('tables') || apiFeatures.has('code') || apiFeatures.has('latex');
+  const showEnhancePrompt = hasDirectMarkers && hasApiKey() && !overrideTurns && !isClassifying && !enhanceDismissed
+    && hasAnyEnhanceFeature
+    && parsed.turns.some(t => t.role === 'assistant');
+
+  const handleEnhanceGemini = useCallback(async () => {
+    if (!hasDirectMarkers || parsed.turns.length === 0) return;
+
+    enhanceCancelledRef.current = false;
+    setIsClassifying(true);
+    setApiError(null);
+    console.log(`[Flow] User triggered enhancement for ${parsed.turns.length} Gemini turns...`);
+
+    try {
+      const assistantTurns = parsed.turns.filter(t => t.role === 'assistant');
+      if (assistantTurns.length === 0) {
+        setIsClassifying(false);
+        return;
+      }
+
+      let totalTokens: TokenUsage = { promptTokens: 0, responseTokens: 0, totalTokens: 0 };
+      const enhancedMap = new Map<number, string>();
+
+      for (const turn of assistantTurns) {
+        if (enhanceCancelledRef.current) {
+          console.log('[Flow] Enhancement cancelled by user');
+          break;
+        }
+        console.log(`[Flow] Enhancing turn ${turn.index} (${turn.content.length} chars)...`);
+        const result = await enhanceContentWithGemini(turn.content, apiFeatures);
+        if (result) {
+          enhancedMap.set(turn.index, result.text);
+          totalTokens = {
+            promptTokens: totalTokens.promptTokens + result.tokens.promptTokens,
+            responseTokens: totalTokens.responseTokens + result.tokens.responseTokens,
+            totalTokens: totalTokens.totalTokens + result.tokens.totalTokens,
+          };
+        }
+      }
+
+      if (enhancedMap.size > 0 && !enhanceCancelledRef.current) {
+        const enhanced: Turn[] = parsed.turns.map(t => {
+          const newContent = enhancedMap.get(t.index);
+          if (newContent) {
+            return { ...t, content: newContent, hasTable: /\|.*\|/.test(newContent) };
+          }
+          return t;
+        });
+        setOverrideTurns(enhanced);
+        setTokenUsage(totalTokens);
+        setSplitMethod('regex');
+        console.log(`[Gemini] SUCCESS — enhanced ${enhancedMap.size} turns, tokens: ${totalTokens.promptTokens} in + ${totalTokens.responseTokens} out = ${totalTokens.totalTokens} total`);
+      }
+    } catch (err: any) {
+      console.error('[Flow] Enhancement failed:', err);
+      const apiErr = getLastApiError();
+      if (apiErr) setApiError(apiErr.message);
+    } finally {
+      setIsClassifying(false);
+    }
+  }, [hasDirectMarkers, parsed.turns, apiFeatures]);
+
+  const handleCancelEnhance = useCallback(() => {
+    enhanceCancelledRef.current = true;
+  }, []);
 
   // Final turns: API override or legacy parser
   const currentTurns = overrideTurns ?? parsed.turns;
 
-  const activeLLMDetection = useMemo(() => detectLLMWithConfidence(activeSource.content), [activeSource.content]);
-  const selectedLLM = llmOverride || activeLLMDetection.llm;
+  const detectedLLM: SimpleLLM =
+    parsed.llm === 'Gemini' ? 'Gemini' :
+    parsed.llm === 'ChatGPT' ? 'ChatGPT' :
+    parsed.llm === 'Claude' ? 'Claude' : 'Other LLM';
+  const selectedLLM = detectedLLM;
 
+  // Smart filename: LLM + first user question summary + date
+  const exportFilename = useMemo(() => {
+    const firstQ = currentTurns.find(t => t.role === 'user');
+    const snippet = firstQ
+      ? firstQ.content.split('\n')[0].trim().replace(/[^\w\s\-]/g, '').trim().slice(0, 50).trim()
+      : '';
+    const date = new Date().toISOString().slice(0, 10);
+    const llmTag = selectedLLM === 'Other LLM' ? 'AI' : selectedLLM;
+    return snippet ? `${llmTag} - ${snippet} (${date})` : `${llmTag} Chat (${date})`;
+  }, [currentTurns, selectedLLM]);
+
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const handleExportPdf = async () => {
     setExporting(true);
     setIsPdfExporting(true);
-    await new Promise(r => setTimeout(r, 800));
+    setPdfError(null);
+    // Wait for React to re-render with forceExpand=true on all TurnBlocks.
+    // Large documents need more time for the DOM to settle.
+    const wordCount = (activeSource.content.match(/\S+/g) || []).length;
+    const renderDelay = wordCount > 30000 ? 3000 : wordCount > 15000 ? 2000 : 800;
+    await new Promise(r => setTimeout(r, renderDelay));
+    // Extra safety: wait for the browser to finish painting
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(undefined))));
     try {
       if (previewRef.current) {
-        await exportToPdf(previewRef.current, activeSource.title, scrollRef.current);
+        await exportToPdf(previewRef.current, exportFilename, scrollRef.current);
       }
+    } catch (err: any) {
+      console.error('[Flow] PDF export failed:', err);
+      setPdfError(err?.message || 'PDF generation failed');
+      setTimeout(() => setPdfError(null), 5000);
     } finally {
       setIsPdfExporting(false);
       setExporting(false);
     }
   };
+  exportPdfRef.current = handleExportPdf;
+
+  const handleExportMarkdown = useCallback(() => {
+    const md = generateMarkdown(currentTurns, selectedLLM);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${exportFilename}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [currentTurns, selectedLLM, exportFilename]);
+
+  const handleExportJSON = useCallback(() => {
+    const data = currentTurns.map(t => ({ role: t.role, content: t.content, llmLabel: t.llmLabel, summary: t.summary }));
+    const json = JSON.stringify({ llm: selectedLLM, exported: new Date().toISOString(), turns: data }, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${exportFilename}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [currentTurns, selectedLLM, exportFilename]);
+
+  const handleExportHTML = useCallback(() => {
+    const turnsHtml = currentTurns.map(t => {
+      const roleLabel = t.role === 'user' ? 'USER' : (t.llmLabel || 'AI');
+      const bg = t.role === 'user' ? '#eef2ff' : '#f8fafc';
+      const border = t.role === 'user' ? '#c7d2fe' : '#e2e8f0';
+      const escaped = t.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return `<div style="margin:16px 0;padding:16px;background:${bg};border:1px solid ${border};border-radius:8px"><strong style="color:#6366f1;font-size:0.75rem;letter-spacing:0.1em">${roleLabel}</strong><pre style="white-space:pre-wrap;margin:8px 0 0;font-family:inherit;font-size:0.9rem">${escaped}</pre></div>`;
+    }).join('\n');
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${activeSource.title}</title><style>body{font-family:Inter,system-ui,sans-serif;max-width:800px;margin:0 auto;padding:2rem;color:#1e293b}h1{font-size:1.5rem;color:#6366f1}p.meta{color:#64748b;font-size:0.8rem}</style></head><body><h1>${selectedLLM} Dialogue Archive</h1><p class="meta">Exported: ${new Date().toLocaleString('en-US')}</p><hr>${turnsHtml}</body></html>`;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${exportFilename}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [currentTurns, selectedLLM, exportFilename]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: text } : s));
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }, [activeSourceId]);
 
   return (
-    <div className="app-container">
+    <div
+      className="app-container"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <header className="app-header">
         <div className="brand">
           <div className="brand-logo"><FileText size={20} /></div>
@@ -284,27 +590,47 @@ export default function App() {
             {splitMethod === 'none' && (hasApiKey() ? 'Ready' : 'No API Key')}
           </div>
           <div className="template-selector no-print">
-            <button onClick={() => setPdfTemplate('professional')} className={`template-btn ${pdfTemplate === 'professional' ? 'active' : ''}`}><Layout size={14} /></button>
-            <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`}><GraduationCap size={14} /></button>
-            <button onClick={() => setPdfTemplate('executive')} className={`template-btn ${pdfTemplate === 'executive' ? 'active' : ''}`}><Briefcase size={14} /></button>
+            <button onClick={() => setPdfTemplate('professional')} className={`template-btn ${pdfTemplate === 'professional' ? 'active' : ''}`} aria-label="Professional template"><Layout size={14} /></button>
+            <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`} aria-label="Academic template"><GraduationCap size={14} /></button>
+            <button onClick={() => setPdfTemplate('executive')} className={`template-btn ${pdfTemplate === 'executive' ? 'active' : ''}`} aria-label="Executive template"><Briefcase size={14} /></button>
           </div>
-          <button onClick={toggleTheme} className="theme-toggle no-print" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+          <button onClick={toggleTheme} className="theme-toggle no-print" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print ${showConsole ? 'active' : ''}`} title="API Console">
+          <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print ${showConsole ? 'active' : ''}`} title="API Console" aria-label="Toggle API console">
             <Terminal size={15} />
           </button>
-          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className="btn btn-ghost no-print" title="Settings">
+          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className="btn btn-ghost no-print" title="Settings (Ctrl+,)" aria-label="Open settings">
             <Settings size={15} />
           </button>
-          <button onClick={handleExportPdf} disabled={exporting} className="btn btn-primary">
+          <button onClick={handleExportMarkdown} className="btn btn-ghost no-print" title="Export as Markdown (.md)" aria-label="Export as Markdown">
+            <FileDown size={15} />
+          </button>
+          <button onClick={handleExportJSON} className="btn btn-ghost no-print" title="Export as JSON" aria-label="Export as JSON">
+            <FileText size={15} />
+          </button>
+          <button onClick={handleExportHTML} className="btn btn-ghost no-print" title="Export as HTML" aria-label="Export as HTML">
+            <Layout size={15} />
+          </button>
+          <button onClick={handleExportPdf} disabled={exporting} className="btn btn-primary" title="Export PDF (Ctrl+P)">
             <Download size={15} /> {exporting ? 'Generating...' : 'PDF'}
           </button>
         </div>
       </header>
 
+      {/* Mobile tab bar */}
+      <div className="mobile-tabs no-print">
+        <button className={`mobile-tab ${mobileTab === 'editor' ? 'mobile-tab-active' : ''}`} onClick={() => setMobileTab('editor')}>
+          <Edit3 size={14} /> Editor
+        </button>
+        <button className={`mobile-tab ${mobileTab === 'preview' ? 'mobile-tab-active' : ''}`} onClick={() => setMobileTab('preview')}>
+          <Eye size={14} /> Preview
+          {currentTurns.length > 0 && <span className="mobile-tab-badge">{currentTurns.length}</span>}
+        </button>
+      </div>
+
       <main className="app-main">
-        <aside className="source-sidebar no-print">
+        <aside className="source-sidebar no-print mobile-hidden-sidebar">
           <div className="sidebar-header">
             <span>SOURCES ({sources.length})</span>
             <button onClick={handleAddSource} className="add-source-btn">
@@ -330,23 +656,58 @@ export default function App() {
                   </button>
                 </div>
                 <div className="source-meta">
-                  {s.content.length} chars
+                  <FileText size={10} /> {s.content.length} chars
                 </div>
               </div>
             ))}
           </div>
         </aside>
 
-        <section className="panel panel-left">
+        <section className={`panel panel-left ${mobileTab !== 'editor' ? 'mobile-hidden' : ''}`}>
           <div className="panel-header">
             <span className="panel-title">EDITOR: {activeSource.title}</span>
+            <button className="btn btn-ghost upload-btn no-print" onClick={() => fileInputRef.current?.click()} title="Upload text file" aria-label="Upload text file">
+              <Upload size={13} />
+            </button>
+            <input ref={fileInputRef} type="file" accept=".txt,.md,.text" onChange={handleFileUpload} style={{ display: 'none' }} />
           </div>
           <LLMSelector
-            detected={activeLLMDetection.llm}
-            selected={selectedLLM}
-            confidence={activeLLMDetection.confidence}
-            onSelect={setLlmOverride}
+            detected={detectedLLM}
           />
+          <div className="api-features no-print">
+            <span className="api-features-label">Enhance:</span>
+            <button className="api-feature-chip on" disabled title="Always on">
+              <Check size={10} strokeWidth={3} /> Split
+            </button>
+            <button
+              className={`api-feature-chip ${apiFeatures.has('format') ? 'on' : 'off'}`}
+              onClick={() => toggleFeature('format')}
+              title="Restore bold, bullets, headings, numbered lists"
+            >
+              {apiFeatures.has('format') && <Check size={10} strokeWidth={3} />} Formatting
+            </button>
+            <button
+              className={`api-feature-chip ${apiFeatures.has('tables') ? 'on' : 'off'}`}
+              onClick={() => toggleFeature('tables')}
+              title="Reconstruct markdown tables from flat text"
+            >
+              {apiFeatures.has('tables') ? <Check size={10} strokeWidth={3} /> : <Table size={10} />} Tables
+            </button>
+            <button
+              className={`api-feature-chip ${apiFeatures.has('code') ? 'on' : 'off'}`}
+              onClick={() => toggleFeature('code')}
+              title="Re-fence code blocks with language detection"
+            >
+              {apiFeatures.has('code') ? <Check size={10} strokeWidth={3} /> : <>{'\u003C\u003E'}</>} Code
+            </button>
+            <button
+              className={`api-feature-chip ${apiFeatures.has('latex') ? 'on' : 'off'}`}
+              onClick={() => toggleFeature('latex')}
+              title="Restore LaTeX math expressions ($inline$ and $$block$$)"
+            >
+              {apiFeatures.has('latex') ? <Check size={10} strokeWidth={3} /> : <span style={{fontStyle: 'italic', fontFamily: 'serif', fontWeight: 700}}>x</span>} LaTeX
+            </button>
+          </div>
           <textarea
             className="raw-input"
             value={activeSource.content}
@@ -356,7 +717,7 @@ export default function App() {
           />
         </section>
 
-        <section className="panel panel-right">
+        <section className={`panel panel-right ${mobileTab !== 'preview' ? 'mobile-hidden' : ''}`}>
           <div className="panel-header">
             <span className="panel-title">PREVIEW</span>
           </div>
@@ -368,28 +729,29 @@ export default function App() {
               </div>
 
               {isClassifying && (
-                <div className="classifying-banner no-print">
+                <div className="classifying-banner no-print" role="status" aria-live="polite">
                   <Zap size={14} className="animate-pulse" />
-                  <span>Gemini API でUser/AIを判定中...</span>
+                  <span>Processing with Gemini API...</span>
+                  <button className="cancel-enhance-btn" onClick={handleCancelEnhance}>Cancel</button>
                 </div>
               )}
 
               {apiError && !isClassifying && (() => {
-                const errType = apiError.includes('429') || apiError.includes('レート制限')
+                const errType = apiError.includes('429') || apiError.includes('Rate limit')
                   ? 'rate-limit'
-                  : apiError.includes('401') || apiError.includes('403') || apiError.includes('認証')
+                  : apiError.includes('401') || apiError.includes('403') || apiError.includes('Auth')
                   ? 'auth'
-                  : apiError.includes('ネットワーク') || apiError.includes('接続')
+                  : apiError.includes('Network') || apiError.includes('connect')
                   ? 'network'
-                  : apiError.includes('APIキーが設定') || apiError.includes('設定されていません')
+                  : apiError.includes('No API key') || apiError.includes('configured')
                   ? 'no-key'
                   : 'generic';
                 const labels: Record<string, { title: string; cls: string }> = {
-                  'rate-limit': { title: 'レート制限', cls: 'api-error-banner--rate-limit' },
-                  'auth':       { title: '認証エラー', cls: 'api-error-banner--auth' },
-                  'network':    { title: 'ネットワークエラー', cls: 'api-error-banner--network' },
-                  'no-key':     { title: 'APIキー未設定', cls: 'api-error-banner--no-key' },
-                  'generic':    { title: 'AI分割エラー', cls: '' },
+                  'rate-limit': { title: 'Rate Limit', cls: 'api-error-banner--rate-limit' },
+                  'auth':       { title: 'Auth Error', cls: 'api-error-banner--auth' },
+                  'network':    { title: 'Network Error', cls: 'api-error-banner--network' },
+                  'no-key':     { title: 'No API Key', cls: 'api-error-banner--no-key' },
+                  'generic':    { title: 'API Error', cls: '' },
                 };
                 const { title, cls } = labels[errType];
                 return (
@@ -407,9 +769,60 @@ export default function App() {
               })()}
 
               {!isClassifying && !apiError && splitMethod === 'gemini-api' && (
-                <div className="ai-success-banner no-print">
+                <div className="ai-success-banner no-print" role="status">
                   <Zap size={14} />
-                  <span>Gemini API でUser/AIを自動分割しました</span>
+                  <span>Auto-split by Gemini API</span>
+                  {tokenUsage && (
+                    <span className="token-usage">
+                      ({tokenUsage.promptTokens.toLocaleString()} in + {tokenUsage.responseTokens.toLocaleString()} out = {tokenUsage.totalTokens.toLocaleString()} tokens)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {showEnhancePrompt && (
+                <div className="enhance-card no-print">
+                  <button className="enhance-card-dismiss" onClick={() => setEnhanceDismissed(true)}><X size={14} /></button>
+                  <div className="enhance-card-icon"><Sparkles size={20} /></div>
+                  <div className="enhance-card-title">Enhance with AI</div>
+                  <div className="enhance-card-desc">Polish formatting using Gemini API. Select features below — uses tokens only when you click Enhance.</div>
+                  <div className="enhance-card-features">
+                    {(['format', 'tables', 'code', 'latex'] as ApiFeature[]).map(f => {
+                      const labels: Record<string, { name: string; hint: string }> = {
+                        format: { name: 'Formatting', hint: 'Bold, lists, headings' },
+                        tables: { name: 'Tables', hint: 'Reconstruct pipe tables' },
+                        code: { name: 'Code', hint: 'Re-fence with language' },
+                        latex: { name: 'LaTeX', hint: 'Restore math delimiters' },
+                      };
+                      const { name, hint } = labels[f];
+                      return (
+                        <button
+                          key={f}
+                          className={`enhance-feature-chip ${apiFeatures.has(f) ? 'active' : ''}`}
+                          onClick={() => toggleFeature(f)}
+                        >
+                          <span className="enhance-feature-check">{apiFeatures.has(f) ? <Check size={10} strokeWidth={3} /> : null}</span>
+                          <span className="enhance-feature-name">{name}</span>
+                          <span className="enhance-feature-hint">{hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button className="enhance-card-btn" onClick={handleEnhanceGemini} disabled={!hasAnyEnhanceFeature}>
+                    <Sparkles size={14} /> Enhance {parsed.turns.filter(t => t.role === 'assistant').length} Response{parsed.turns.filter(t => t.role === 'assistant').length !== 1 ? 's' : ''}
+                  </button>
+                </div>
+              )}
+
+              {!isClassifying && !apiError && overrideTurns && hasDirectMarkers && (
+                <div className="ai-success-banner no-print">
+                  <Sparkles size={14} />
+                  <span>AI Enhancement applied</span>
+                  {tokenUsage && (
+                    <span className="token-usage">
+                      ({tokenUsage.promptTokens.toLocaleString()} in + {tokenUsage.responseTokens.toLocaleString()} out = {tokenUsage.totalTokens.toLocaleString()} tokens)
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -422,7 +835,11 @@ export default function App() {
               ) : !isClassifying && sourceContents.trim() ? (
                 <div className="messages-list">
                   <div className="empty-state no-print">
-                    テキストを左に貼り付けてください。
+                    <div className="empty-state-icon">
+                      <FileQuestion size={24} />
+                    </div>
+                    <div className="empty-state-text">No turns detected</div>
+                    <div className="empty-state-hint">Paste a chat log in the editor or drop a .txt file</div>
                   </div>
                 </div>
               ) : null}
@@ -432,6 +849,8 @@ export default function App() {
       </main>
 
       {parseErrorToast && <div className="toast-error no-print">⚠ Error</div>}
+      {pdfError && <div className="toast-error no-print">⚠ PDF: {pdfError}</div>}
+      {inputWarning && <div className="toast-error no-print" style={{ background: '#f59e0b', borderColor: '#d97706' }}>⚠ {inputWarning}</div>}
 
       {showConsole && (
         <div className="api-console no-print">
@@ -455,12 +874,32 @@ export default function App() {
         </div>
       )}
 
+      {/* Drag-and-drop overlay */}
+      {isDragging && (
+        <div className="drag-overlay no-print">
+          <div className="drag-overlay-content">
+            <Upload size={40} />
+            <span>Drop .txt or .md file here</span>
+          </div>
+        </div>
+      )}
+
+      {/* PDF export spinner overlay */}
+      {exporting && (
+        <div className="pdf-spinner-overlay no-print" role="status" aria-live="assertive">
+          <div className="pdf-spinner-content">
+            <div className="pdf-spinner"></div>
+            <span>Generating PDF...</span>
+          </div>
+        </div>
+      )}
+
       {showSettings && (
-        <div className="modal-overlay no-print" onClick={() => setShowSettings(false)}>
+        <div className="modal-overlay no-print" onClick={() => setShowSettings(false)} role="dialog" aria-modal="true" aria-label="Settings">
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>System Settings</h3>
-              <button className="btn-close" onClick={() => setShowSettings(false)}><X size={18} /></button>
+              <button className="btn-close" onClick={() => setShowSettings(false)} aria-label="Close settings"><X size={18} /></button>
             </div>
             <div className="settings-body">
               <div className="setting-group">
@@ -473,12 +912,13 @@ export default function App() {
                     onBlur={() => commitApiKey(apiKeyDraft)}
                     onKeyDown={(e) => { if (e.key === 'Enter') commitApiKey(apiKeyDraft); }}
                     placeholder="AIza..."
+                    aria-label="Google AI API Key"
                   />
                   <div className="api-badge google-badge">gemini-2.5-flash</div>
                 </div>
                 <p className="setting-hint">
-                  ChatGPT/Claude等のチャットログを正確にUser/AIに分割するために必須です。
-                  キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{color: 'var(--color-primary-500)'}}>Google AI Studio</a> で無料で発行できます。
+                  Required for accurate User/AI splitting of ChatGPT, Claude, and other chat logs.
+                  Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{color: 'var(--color-primary-500)'}}>Google AI Studio</a>.
                 </p>
                 {hasApiKey() && (
                   <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px'}}>
@@ -490,7 +930,7 @@ export default function App() {
                         setApiTestResult('testing');
                         try {
                           const result = await splitChatWithGemini('User: Hello\nAI: Hi there!');
-                          setApiTestResult(result && result.length > 0 ? 'ok' : 'fail');
+                          setApiTestResult(result && result.messages.length > 0 ? 'ok' : 'fail');
                         } catch {
                           setApiTestResult('fail');
                         }

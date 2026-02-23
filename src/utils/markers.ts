@@ -8,7 +8,7 @@
 export const USER_MARKERS: RegExp[] = [
     /^あなたのプロンプト$/,
     /^You$/,
-    /^あなた$/,
+    /^あなた[:：]?\s*$/,
     /^User$/i,
     /^User:/i,
     /^自分$/,
@@ -32,7 +32,7 @@ export const ASSISTANT_MARKERS: RegExp[] = [
 
     // ChatGPT variants
     /^ChatGPT$/i,
-    /^ChatGPT:/i,
+    /^ChatGPT[:：]/i,
     /^ChatGPT said:?\s*$/i,
     /^GPT-?[3-9]/i,
     /^o[13]-?mini/i,

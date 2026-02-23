@@ -7,7 +7,7 @@ import { FileText, Globe, Calendar } from 'lucide-react';
 
 export function PdfPrintHeader({ llm }: { llm: string }) {
     const now = new Date();
-    const dateStr = now.toLocaleDateString('ja-JP', {
+    const dateStr = now.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
