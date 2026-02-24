@@ -52,7 +52,7 @@ function getExplicitRole(block: OptimizedBlock): Role | null {
 export function postProcess(blocks: OptimizedBlock[]): OptimizedBlock[] {
     if (blocks.length === 0) return [];
 
-    let result = [...blocks];
+    const result = [...blocks];
 
     // ── Step 1 & 2: Force explicit markers and propagate ──
     for (let i = 0; i < result.length; i++) {

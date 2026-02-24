@@ -35,7 +35,7 @@ export function removeJunk(text: string): string {
             if (JUNK_EXACT.has(t)) return false;
             if (/^\d+\s*\/\s*\d+$/.test(t)) return false;
             if (/^draft\s+\d+$/i.test(t)) return false;
-            if (/^[👍👎🔊📋✏️🔄⋮…]{1,4}$/.test(t)) return false;
+            if (/^[👍👎🔊📋✏️🔄⋮…]{1,4}$/u.test(t)) return false;
             if (INLINE_JUNK_LINE_RE.some(r => r.test(t))) return false;
             return true;
         })

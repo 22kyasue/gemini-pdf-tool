@@ -32,6 +32,13 @@ export async function exportToPdf(
         scrollContainer.style.overflowY = 'visible';
     }
 
+    // Temporarily force light theme and wrapping class for PDF export
+    const prevTheme = document.documentElement.getAttribute('data-theme');
+    if (prevTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'light');
+    }
+    document.body.classList.add('pdf-exporting');
+
     try {
         const BASE_WIDTH = 794;
         const SAFE_HEIGHT_LIMIT = 14000; // max 14k pixel renders at a time
@@ -158,6 +165,16 @@ export async function exportToPdf(
                 const pxWidth = canvas.width;
                 const pxHeight = canvas.height;
 
+                const ctx = canvas.getContext('2d');
+                let imageData: ImageData | null = null;
+                if (ctx) {
+                    try {
+                        imageData = ctx.getImageData(0, 0, pxWidth, pxHeight);
+                    } catch (e) {
+                        console.warn('Could not read canvas pixel data for smart slicing:', e);
+                    }
+                }
+
                 // Mm mapping
                 const imgWidthMm = PRINTABLE_WIDTH_MM;
                 const imgHeightMm = (pxHeight * imgWidthMm) / pxWidth;
@@ -170,7 +187,7 @@ export async function exportToPdf(
                     const spaceOnPage = A4_HEIGHT_MM - pdfYOffsetMm - MARGIN_MM;
 
                     // How much of the chunk image we can draw right now
-                    const sliceHeightMm = Math.min(spaceOnPage, remainingHeightMm);
+                    let sliceHeightMm = Math.min(spaceOnPage, remainingHeightMm);
 
                     if (isFirstPageInPdf) {
                         isFirstPageInPdf = false;
@@ -180,6 +197,52 @@ export async function exportToPdf(
                         pdfYOffsetMm = MARGIN_MM;
                         continue;
                     }
+
+                    // ======== SMART SLICE COMPUTE ========
+                    // Only apply if we are actually cutting the chunk mid-way and have pixel data
+                    if (sliceHeightMm < remainingHeightMm && imageData) {
+                        // Calculate where our naive math says we should slice in pixels
+                        const targetPxY = Math.floor(((chunkSourceYOffsetMm + sliceHeightMm) / imgHeightMm) * pxHeight);
+
+                        // Search upwards to find a pure "background color" row (e.g. #fff or #f1f5f9)
+                        // This prevents cutting through dark code blocks or text lines.
+                        // We will search up to 60% of the physical page height. If an element (like a code block)
+                        // is smaller than 60% of the page, this pushes it entirely to the next page cleanly!
+                        const MAX_SEARCH_PX = Math.floor((spaceOnPage / imgHeightMm) * pxHeight * 0.60);
+                        let safePxY = targetPxY;
+
+                        for (let y = targetPxY; y > targetPxY - MAX_SEARCH_PX && y > 1; y--) {
+                            let isRowSafe = true;
+                            const rowOffset = y * pxWidth * 4;
+
+                            // Check pixels in this row
+                            for (let x = 0; x < pxWidth * 4; x += 4) {
+                                const r = imageData.data[rowOffset + x];
+                                const g = imageData.data[rowOffset + x + 1];
+                                const b = imageData.data[rowOffset + x + 2];
+
+                                // If we hit any pixel that is noticeably darker than standard light backgrounds (white/slate-50)
+                                // then this row intersects a widget, code block, or text. Unsafe to cut!
+                                if (r < 240 || g < 240 || b < 240) {
+                                    isRowSafe = false;
+                                    break;
+                                }
+                            }
+
+                            if (isRowSafe) {
+                                safePxY = y;
+                                break; // Found a pure empty gap between UI elements!
+                            }
+                        }
+
+                        // Apply the safe cut if it shifted upward
+                        if (safePxY < targetPxY) {
+                            sliceHeightMm = (safePxY / pxHeight) * imgHeightMm - chunkSourceYOffsetMm;
+                            // Failsafe bounds check
+                            if (sliceHeightMm <= 0) sliceHeightMm = Math.min(spaceOnPage, remainingHeightMm);
+                        }
+                    }
+                    // =====================================
 
                     // We use jsPDF's clipping mechanics by offsetting the Y negatively
                     pdf.addImage(
@@ -219,6 +282,12 @@ export async function exportToPdf(
         if (scrollContainer) {
             scrollContainer.style.overflow = prevOverflow;
             scrollContainer.style.overflowY = prevOverflowY;
+        }
+        document.body.classList.remove('pdf-exporting');
+        if (prevTheme) {
+            document.documentElement.setAttribute('data-theme', prevTheme);
+        } else {
+            document.documentElement.removeAttribute('data-theme');
         }
     }
 }

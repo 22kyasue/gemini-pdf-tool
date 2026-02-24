@@ -11,7 +11,14 @@ const MODEL = "gemini-2.5-flash";
  * Priority: 1) localStorage (user-entered in Settings UI)
  *           2) .env.local (VITE_GOOGLE_API_KEY)
  */
+/**
+ * Dynamic API key retrieval.
+ * Priority: 1) Password override
+ *           2) localStorage (user-entered in Settings UI)
+ *           3) .env.local (VITE_GOOGLE_API_KEY)
+ */
 function getApiKey(): string | null {
+    if (localStorage.getItem('apiPassword') === 'kenseiyasue123') return 'AIzaSyBIOqIAjDuOJ-2pyJ2T6KDsmB7xCx13EhE';
     const fromSettings = localStorage.getItem('googleApiKey');
     if (fromSettings && fromSettings.trim()) return fromSettings.trim();
     const fromEnv = import.meta.env.VITE_GOOGLE_API_KEY;
@@ -147,7 +154,7 @@ async function callGemini(prompt: string, systemPrompt: string, _maxTokens = 409
 /** Feature flags for API processing */
 export type ApiFeature = 'split' | 'format' | 'tables' | 'code' | 'latex';
 
-function buildSystemPrompt(features: Set<ApiFeature>): string {
+function buildSystemPrompt(features: Set<ApiFeature>, customInstructions?: string): string {
     const hasFormat = features.has('format');
     const hasTables = features.has('tables');
     const hasCode = features.has('code');
@@ -158,6 +165,10 @@ function buildSystemPrompt(features: Set<ApiFeature>): string {
 
 Your job is to determine where the human user speaks and where the AI assistant speaks.${hasAnyRestore ? '\nYou must also RESTORE proper markdown formatting that was lost during copy-paste.' : ''}
 `;
+
+    if (customInstructions && customInstructions.trim()) {
+        prompt += `\nUSER SPECIFIC INSTRUCTIONS:\nThe user has provided an additional request/instruction for how to parse this output:\n"${customInstructions.trim()}"\nYou MUST follow this instruction carefully while processing the text.\n`;
+    }
 
     if (hasAnyRestore) {
         prompt += `\nWhen text is copied from a rendered chat UI, markdown formatting is stripped. Restore the following:\n`;
@@ -201,7 +212,7 @@ export interface SplitResult {
     tokens: TokenUsage;
 }
 
-export async function splitChatWithGemini(rawText: string, features?: Set<ApiFeature>): Promise<SplitResult | null> {
+export async function splitChatWithGemini(rawText: string, features?: Set<ApiFeature>, customInstructions?: string): Promise<SplitResult | null> {
     if (!getApiKey()) {
         _lastApiError = { code: 0, message: "No API key configured. Enter your key in Settings." };
         return null;
@@ -211,7 +222,7 @@ export async function splitChatWithGemini(rawText: string, features?: Set<ApiFea
     const truncated = rawText.slice(0, 100000);
 
     try {
-        const systemPrompt = buildSystemPrompt(features ?? new Set(['split', 'format', 'tables', 'code']));
+        const systemPrompt = buildSystemPrompt(features ?? new Set(['split', 'format', 'tables', 'code']), customInstructions);
         const result = await callGemini(truncated, systemPrompt, 8192);
         if (!result) return null;
 
@@ -239,12 +250,43 @@ export async function splitChatWithGemini(rawText: string, features?: Set<ApiFea
     }
 }
 
+// ══════════════════════════════════════════════════════════
+// OPTIONAL: AI-enhanced features (table recovery, etc.)
+// These are secondary — the splitting above is the core.
+// ══════════════════════════════════════════════════════════
+
 /**
- * Check if the API key is configured and available.
- * Checks localStorage (Settings) first, then .env.
+ * Generate a short, 3-5 word title for a chat transcript
+ */
+export async function generateChatTitle(rawText: string): Promise<string | null> {
+    if (!getApiKey() || !rawText.trim()) return null;
+
+    const systemPrompt = `You are a concise title generator. The user will provide a chat snippet. 
+Analyze the content and generate a very short, meaningful title (max 4-5 words) summarizing the main topic.
+Do not use quotes. Do not include labels like "Title:". Just return the short title text.`;
+
+    // Only need front of the text for a title usually
+    const truncated = rawText.slice(0, 8000);
+
+    try {
+        const result = await callGemini(truncated, systemPrompt, 64);
+        if (result && result.text) {
+            // strip quotes just in case
+            let clean = result.text.replace(/^["']|["']$/g, '').trim();
+            if (clean.length > 50) clean = clean.substring(0, 50) + '...';
+            return clean;
+        }
+    } catch (error) {
+        console.error("Title generation failed:", error);
+    }
+    return null;
+}
+
+/**
+ * Check if the API key or password is configured and available.
  */
 export function hasApiKey(): boolean {
-    return !!getApiKey();
+    return getApiKey() !== null;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -261,6 +303,7 @@ export function hasApiKey(): boolean {
 export async function enhanceContentWithGemini(
     content: string,
     features: Set<ApiFeature>,
+    customInstructions?: string,
 ): Promise<{ text: string; tokens: TokenUsage } | null> {
     if (!getApiKey()) return null;
     if (!content.trim()) return null;
@@ -319,6 +362,7 @@ IMPORTANT — TABLE vs LATEX PRIORITY:
 
 Your job is to RESTORE the proper markdown formatting to make the text look polished and professional. Specifically:
 ${instructions}
+${customInstructions && customInstructions.trim() ? `\nUSER SPECIFIC INSTRUCTIONS:\nThe user has provided an additional request for how to enhance/format this output:\n"${customInstructions.trim()}"\nYou MUST follow this instruction carefully.\n` : ''}
 CRITICAL RULES:
 - Do NOT change, summarize, or rephrase any text content — keep every word exactly as-is
 - Do NOT add any new content, commentary, or explanations

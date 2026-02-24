@@ -1,0 +1,61 @@
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\App.tsx[24m[0m
+[0m   [2m80:13[22m  [31merror[39m    Empty block statement                                                                                                    [2mno-empty[22m[0m
+[0m  [2m106:65[22m  [31merror[39m    Empty block statement                                                                                                    [2mno-empty[22m[0m
+[0m  [2m132:51[22m  [31merror[39m    Unexpected any. Specify a different type                                                                                 [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m139:29[22m  [31merror[39m    Unexpected any. Specify a different type                                                                                 [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m140:30[22m  [31merror[39m    Unexpected any. Specify a different type                                                                                 [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m141:31[22m  [31merror[39m    Unexpected any. Specify a different type                                                                                 [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m388:6[22m   [33mwarning[39m  React Hook useEffect has a missing dependency: 'deferredSources'. Either include it or remove the dependency array       [2mreact-hooks/exhaustive-deps[22m[0m
+[0m  [2m453:19[22m  [31merror[39m    Unexpected any. Specify a different type                                                                                 [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m479:61[22m  [31merror[39m    Unnecessary escape character: \-                                                                                         [2mno-useless-escape[22m[0m
+[0m  [2m502:19[22m  [31merror[39m    Unexpected any. Specify a different type                                                                                 [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m552:6[22m   [33mwarning[39m  React Hook useCallback has a missing dependency: 'activeSource.title'. Either include it or remove the dependency array  [2mreact-hooks/exhaustive-deps[22m[0m
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\algorithm\index.ts[24m[0m
+[0m  [2m32:29[22m  [31merror[39m  Unexpected any. Specify a different type  [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\algorithm\normalizer.ts[24m[0m
+[0m  [2m35:8[22m   [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m35:10[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m35:12[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m35:14[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m35:16[22m  [31merror[39m  Unexpected combined character in character class            [2mno-misleading-character-class[22m[0m
+[0m  [2m35:18[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m59:37[22m  [31merror[39m  Unexpected joined character sequence in character class     [2mno-misleading-character-class[22m[0m
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\algorithm\postProcessor.ts[24m[0m
+[0m  [2m55:9[22m  [31merror[39m  'result' is never reassigned. Use 'const' instead  [2mprefer-const[22m[0m
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\algorithm\sequenceOptimizer.ts[24m[0m
+[0m  [2m55:13[22m  [31merror[39m  'cost' is never reassigned. Use 'const' instead  [2mprefer-const[22m[0m
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\components\ContentRenderer.tsx[24m[0m
+[0m  [2m232:43[22m  [31merror[39m  'node' is defined but never used          [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m238:44[22m  [31merror[39m  'node' is defined but never used          [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m238:83[22m  [31merror[39m  Unexpected any. Specify a different type  [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\utils\junkRemoval.ts[24m[0m
+[0m  [2m38:20[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m38:22[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m38:24[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m38:26[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m  [2m38:28[22m  [31merror[39m  Unexpected combined character in character class            [2mno-misleading-character-class[22m[0m
+[0m  [2m38:30[22m  [31merror[39m  Unexpected surrogate pair in character class. Use 'u' flag  [2mno-misleading-character-class[22m[0m
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\utils\llmParser.ts[24m[0m
+[0m   [2m63:26[22m  [31merror[39m  Unexpected any. Specify a different type         [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m   [2m73:65[22m  [31merror[39m  '_maxTokens' is assigned a value but never used  [2m@typescript-eslint/no-unused-vars[22m[0m
+[0m  [2m107:37[22m  [31merror[39m  Unexpected any. Specify a different type         [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m121:61[22m  [31merror[39m  Unexpected any. Specify a different type         [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m129:63[22m  [31merror[39m  Unexpected any. Specify a different type         [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m225:52[22m  [31merror[39m  Unexpected any. Specify a different type         [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m[0m
+[0m[4mC:\Users\stake\githubproject\gemini-pdf-tool\src\vite-env.d.ts[24m[0m
+[0m  [2m6:74[22m  [31merror[39m  Unexpected any. Specify a different type  [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m7:87[22m  [31merror[39m  Unexpected any. Specify a different type  [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m  [2m8:24[22m  [31merror[39m  Unexpected any. Specify a different type  [2m@typescript-eslint/no-explicit-any[22m[0m
+[0m[0m
+[0m[31m[1m✖ 39 problems (37 errors, 2 warnings)[22m[39m[0m
+[0m[31m[1m[22m[39m[31m[1m  2 errors and 0 warnings potentially fixable with the `--fix` option.[22m[39m[0m
+[0m[31m[1m[22m[39m[0m

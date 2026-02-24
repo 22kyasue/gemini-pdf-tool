@@ -4,9 +4,10 @@ import {
   GraduationCap, Briefcase,
   Layout, Plus, Trash, Settings, X,
   Sun, Moon, Terminal, Check, FileQuestion,
-  Sparkles, Upload, FileDown, Edit3, Eye
+  Sparkles, Upload, FileDown, Edit3, Eye,
+  BookOpen, RefreshCcw
 } from 'lucide-react';
-import { splitChatWithGemini, enhanceContentWithGemini, hasApiKey, getLastApiError, clearLastApiError } from './utils/llmParser';
+import { splitChatWithGemini, enhanceContentWithGemini, generateChatTitle, hasApiKey, getLastApiError, clearLastApiError } from './utils/llmParser';
 import type { TokenUsage, ApiFeature } from './utils/llmParser';
 
 // -- Types --
@@ -17,6 +18,9 @@ interface Source {
   title: string;
   content: string;
   llm: LLMName;
+  apiSplitTurns?: Turn[];
+  apiSplitRawText?: string;
+  apiSplitTokens?: TokenUsage;
 }
 
 // -- Utils --
@@ -30,6 +34,7 @@ import { LLMSelector } from './components/LLMSelector';
 import type { SimpleLLM } from './components/LLMSelector';
 import { PdfPrintHeader } from './components/PdfPrintHeader';
 import { _onRenderError } from './components/ErrorBoundary';
+import { useTranslation } from './hooks/useTranslation';
 
 // -- Markdown export utility --
 function generateMarkdown(turns: Turn[], llm: string): string {
@@ -73,11 +78,13 @@ The narrative follows a "Investment -> Innovation -> Efficiency" cycle.
 This confirms our 2026 sustainability targets are achievable ahead of schedule.`;
 
 export default function App() {
+  const { lang, toggleLang, t } = useTranslation();
+
   const [sources, setSources] = useState<Source[]>(() => {
     try {
       const saved = localStorage.getItem(LS_SOURCES);
       if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) return parsed; }
-    } catch {}
+    } catch { }
     return [{ id: 'initial', title: 'Main Session', content: SAMPLE, llm: 'Gemini' }];
   });
   const [activeSourceId, setActiveSourceId] = useState<string>(() => {
@@ -99,11 +106,12 @@ export default function App() {
   const [showConsole, setShowConsole] = useState(false);
   const [googleApiKey, setGoogleApiKey] = useState(() => localStorage.getItem('googleApiKey') || '');
   const [apiTestResult, setApiTestResult] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+  const [apiPassword, setApiPassword] = useState(() => localStorage.getItem('apiPassword') || '');
 
   // -- API Processing Options --
   const [apiFeatures, setApiFeatures] = useState<Set<ApiFeature>>(() => {
     const saved = localStorage.getItem('apiFeatures');
-    if (saved) try { return new Set(JSON.parse(saved)); } catch {}
+    if (saved) try { return new Set(JSON.parse(saved)); } catch { }
     return new Set<ApiFeature>(['split', 'format', 'tables', 'code']);
   });
 
@@ -113,7 +121,6 @@ export default function App() {
       if (f === 'split') return next; // split is always on
       if (next.has(f)) next.delete(f); else next.add(f);
       localStorage.setItem('apiFeatures', JSON.stringify([...next]));
-      lastAiSplitRef.current = ''; // re-trigger API with new features
       return next;
     });
   };
@@ -203,7 +210,7 @@ export default function App() {
   }, [activeSourceId]);
 
   // -- Keyboard shortcuts (use ref to avoid stale closure) --
-  const exportPdfRef = useRef<() => void>(() => {});
+  const exportPdfRef = useRef<() => void>(() => { });
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -223,7 +230,14 @@ export default function App() {
     localStorage.setItem('googleApiKey', trimmed);
     clearLastApiError();
     setApiError(null);
-    lastAiSplitRef.current = '';
+  };
+
+  const commitApiPassword = (val: string) => {
+    const trimmed = val.trim();
+    setApiPassword(trimmed);
+    localStorage.setItem('apiPassword', trimmed);
+    clearLastApiError();
+    setApiError(null);
   };
 
   const activeSource = sources.find(s => s.id === activeSourceId) || sources[0];
@@ -263,6 +277,46 @@ export default function App() {
     setSources(prev => prev.map(s => s.id === id ? { ...s, title } : s));
   };
 
+  // ── Auto-gen Title ──
+  const titleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTitlePrefixRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!googleApiKey || !activeSource.content.trim() || activeSource.content.length < 50) return;
+
+    // Auto title if the first 200 characters changed significantly (meaning a new chat was pasted)
+    const currentPrefix = activeSource.content.slice(0, 200).trim();
+    const lastPrefix = lastTitlePrefixRef.current[activeSourceId];
+    const isDefault = activeSource.title === 'Main Session' || activeSource.title === 'New Source';
+
+    if (!lastPrefix) {
+      // If we've never stored a prefix for this source in this session, assume it's stable 
+      // UNLESS the title is still the default (meaning it's brand new and needs a title)
+      if (!isDefault) {
+        lastTitlePrefixRef.current[activeSourceId] = currentPrefix;
+        return;
+      }
+    } else if (lastPrefix === currentPrefix) {
+      // Prefix hasn't changed, meaning it's the same chat just appended to.
+      return;
+    }
+
+    // Use a short debounce to wait for user to finish pasting/typing
+    if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
+    titleTimerRef.current = setTimeout(() => {
+      generateChatTitle(activeSource.content).then(newTitle => {
+        if (newTitle && newTitle !== 'Main Session' && newTitle !== 'New Source') {
+          lastTitlePrefixRef.current[activeSourceId] = currentPrefix;
+          handleUpdateTitle(activeSourceId, newTitle);
+        }
+      });
+    }, 1500);
+
+    return () => {
+      if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
+    };
+  }, [activeSource.content, activeSource.title, activeSourceId, googleApiKey]);
+
   const showParseError = useCallback(() => {
     setParseErrorToast(true);
     setTimeout(() => setParseErrorToast(false), 2500);
@@ -296,96 +350,99 @@ export default function App() {
     [activeSource.content]
   );
 
-  // Turns state: starts from legacy parser, can be overridden by Gemini API
-  const [overrideTurns, setOverrideTurns] = useState<Turn[] | null>(null);
+  // Turns state is now primarily cached in the Source object to persist across refreshes
   const [isClassifying, setIsClassifying] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [splitMethod, setSplitMethod] = useState<'regex' | 'gemini-api' | 'none'>('none');
-  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
-  const lastAiSplitRef = useRef<string>('');
+  const [customInstructions, setCustomInstructions] = useState('');
   const apiRequestIdRef = useRef(0);
 
-  // Reset override when source text changes or API key changes
+  // Clear errors when changing tabs or keys
   useEffect(() => {
-    setOverrideTurns(null);
     setApiError(null);
-    setTokenUsage(null);
-    lastAiSplitRef.current = '';
-    if (hasDirectMarkers) {
-      setSplitMethod('regex');
-    } else {
-      setSplitMethod('none');
-    }
-  }, [sourceContents, hasDirectMarkers, googleApiKey]);
+  }, [activeSourceId, googleApiKey]);
 
-  // ── Gemini API for non-Gemini chats ──
-  // Skip API for large documents (>20k words) to avoid excessive token usage.
-  // The regex parser handles ChatGPT/Claude formats well via marker detection.
   const WORD_LIMIT_FOR_API = 20_000;
 
-  useEffect(() => {
-    if (hasDirectMarkers) { console.log('[Flow] Gemini markers found → regex only, no API'); return; }
-    const rawText = deferredSources.map(s => s.content).join('\n---\n').trim();
-    if (!rawText) { console.log('[Flow] Empty text → skip API'); return; }
-    if (!hasApiKey()) { console.log('[Flow] No API key → skip API'); return; }
-    if (rawText === lastAiSplitRef.current) { console.log('[Flow] Same text as last call → skip API'); return; }
-
-    // Large documents: fall back to regex to avoid burning tokens
+  const triggerApiSplit = useCallback((sourceId: string, rawText: string, strInstructions?: string) => {
+    if (!hasApiKey() || !rawText.trim()) return;
     const wordCount = rawText.split(/\s+/).length;
     if (wordCount > WORD_LIMIT_FOR_API) {
-      console.log(`[Flow] Large document (${wordCount} words > ${WORD_LIMIT_FOR_API}) → regex only, skipping API`);
-      setSplitMethod('regex');
+      console.log(`[Flow] Large document (${wordCount} words > ${WORD_LIMIT_FOR_API}) → skipping API`);
       return;
     }
 
-    console.log(`[Flow] Non-Gemini text detected (${rawText.length} chars), scheduling API call in 300ms...`);
-
+    console.log(`[Flow] Triggering API split for source ${sourceId}...`);
     const requestId = ++apiRequestIdRef.current;
-    const timer = setTimeout(() => {
-      console.log('[Flow] Timer fired → calling splitChatWithGemini...');
-      lastAiSplitRef.current = rawText;
-      setIsClassifying(true);
-      setApiError(null);
+    setIsClassifying(true);
+    setApiError(null);
 
-      splitChatWithGemini(rawText, apiFeatures).then(result => {
-        // Discard stale responses
-        if (requestId !== apiRequestIdRef.current) {
-          console.log('[Flow] Discarding stale API response');
-          return;
-        }
-        if (result && result.messages.length > 0) {
-          setTokenUsage(result.tokens);
-          // Convert AISplitMessage[] to Turn[]
-          const converted: Turn[] = result.messages.map((msg, i) => ({
-            role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-            llmLabel: msg.role === 'user' ? 'USER' : 'AI',
-            content: msg.content,
-            rawContent: msg.content,
-            index: i,
-            summary: msg.role === 'user' ? `Q${i + 1}. ${msg.content.split('\n')[0]?.trim().slice(0, 24) || ''}` : '',
-            hasTable: /\|.*\|/.test(msg.content),
-            keyPoints: [],
-          }));
-          setOverrideTurns(converted);
-          setApiError(null);
-          setSplitMethod('gemini-api');
-        } else {
-          const err = getLastApiError();
-          if (err) setApiError(err.message);
-          setSplitMethod('none');
-        }
-      }).catch(err => {
-        if (requestId !== apiRequestIdRef.current) return;
-        console.error("AI split failed:", err);
-        setApiError(`Split error: ${err.message}`);
-        setSplitMethod('none');
-      }).finally(() => {
-        if (requestId === apiRequestIdRef.current) setIsClassifying(false);
-      });
-    }, 300);
+    splitChatWithGemini(rawText, apiFeatures, strInstructions).then(result => {
+      if (requestId !== apiRequestIdRef.current) return;
+      if (result && result.messages.length > 0) {
+        const converted: Turn[] = result.messages.map((msg, i) => ({
+          role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+          llmLabel: msg.role === 'user' ? 'USER' : 'AI',
+          content: msg.content,
+          rawContent: msg.content,
+          index: i,
+          summary: msg.role === 'user' ? `Q${i + 1}. ${msg.content.split('\n')[0]?.trim().slice(0, 24) || ''}` : '',
+          hasTable: /\|.*\|/.test(msg.content),
+          keyPoints: [],
+        }));
 
-    return () => clearTimeout(timer);
-  }, [sourceContents, hasDirectMarkers, googleApiKey, apiFeatures]);
+        setSources(prev => prev.map(s => s.id === sourceId ? {
+          ...s,
+          apiSplitTurns: converted,
+          apiSplitRawText: rawText,
+          apiSplitTokens: result.tokens
+        } : s));
+        setApiError(null);
+      } else {
+        const err = getLastApiError();
+        if (err) setApiError(err.message);
+      }
+    }).catch(err => {
+      if (requestId !== apiRequestIdRef.current) return;
+      console.error("AI split failed:", err);
+      setApiError(`Split error: ${err.message}`);
+    }).finally(() => {
+      if (requestId === apiRequestIdRef.current) setIsClassifying(false);
+    });
+  }, [apiFeatures]);
+
+  // Handle Automatic logic 
+  useEffect(() => {
+    if (hasDirectMarkers || !hasApiKey() || !activeSource.content.trim()) return;
+
+    // If completely cleared, wipe cache automatically
+    if (activeSource.content.length === 0) {
+      if (activeSource.apiSplitTurns) {
+        setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, apiSplitTurns: undefined, apiSplitRawText: undefined } : s));
+      }
+      return;
+    }
+
+    // Auto-trigger if it has never been parsed successfully
+    if (!activeSource.apiSplitRawText || !activeSource.apiSplitTurns) {
+      const timer = setTimeout(() => triggerApiSplit(activeSourceId, activeSource.content), 500);
+      return () => clearTimeout(timer);
+    }
+
+    // Auto-trigger if text changed by > 30%
+    const oldLen = activeSource.apiSplitRawText.length;
+    const newLen = activeSource.content.length;
+    const diff = Math.abs(newLen - oldLen) / Math.max(oldLen, 1);
+
+    if (diff >= 0.3) {
+      console.log(`[Flow] Text changed by ${Math.round(diff * 100)}% -> Auto-refreshing API split`);
+      const timer = setTimeout(() => triggerApiSplit(activeSourceId, activeSource.content), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [activeSource.content, activeSourceId, hasDirectMarkers, googleApiKey, triggerApiSplit]);
+
+  const overrideTurns = activeSource.apiSplitTurns || null;
+  const tokenUsage = activeSource.apiSplitTokens || null;
+  const splitMethod = hasDirectMarkers ? 'regex' : (overrideTurns ? 'gemini-api' : 'none');
 
   // ── Gemini-marker chats: user-triggered enhance for code/latex ──
   const [enhanceDismissed, setEnhanceDismissed] = useState(false);
@@ -426,7 +483,7 @@ export default function App() {
           break;
         }
         console.log(`[Flow] Enhancing turn ${turn.index} (${turn.content.length} chars)...`);
-        const result = await enhanceContentWithGemini(turn.content, apiFeatures);
+        const result = await enhanceContentWithGemini(turn.content, apiFeatures, customInstructions);
         if (result) {
           enhancedMap.set(turn.index, result.text);
           totalTokens = {
@@ -445,9 +502,11 @@ export default function App() {
           }
           return t;
         });
-        setOverrideTurns(enhanced);
-        setTokenUsage(totalTokens);
-        setSplitMethod('regex');
+        setSources(prev => prev.map(s => s.id === activeSourceId ? {
+          ...s,
+          apiSplitTurns: enhanced,
+          apiSplitTokens: totalTokens
+        } : s));
         console.log(`[Gemini] SUCCESS — enhanced ${enhancedMap.size} turns, tokens: ${totalTokens.promptTokens} in + ${totalTokens.responseTokens} out = ${totalTokens.totalTokens} total`);
       }
     } catch (err: any) {
@@ -457,7 +516,15 @@ export default function App() {
     } finally {
       setIsClassifying(false);
     }
-  }, [hasDirectMarkers, parsed.turns, apiFeatures]);
+  }, [hasDirectMarkers, parsed.turns, apiFeatures, customInstructions]);
+
+  const handleManualApiRetry = () => {
+    if (hasDirectMarkers) {
+      handleEnhanceGemini();
+    } else {
+      triggerApiSplit(activeSourceId, activeSource.content, customInstructions);
+    }
+  };
 
   const handleCancelEnhance = useCallback(() => {
     enhanceCancelledRef.current = true;
@@ -468,8 +535,8 @@ export default function App() {
 
   const detectedLLM: SimpleLLM =
     parsed.llm === 'Gemini' ? 'Gemini' :
-    parsed.llm === 'ChatGPT' ? 'ChatGPT' :
-    parsed.llm === 'Claude' ? 'Claude' : 'Other LLM';
+      parsed.llm === 'ChatGPT' ? 'ChatGPT' :
+        parsed.llm === 'Claude' ? 'Claude' : 'Other LLM';
   const selectedLLM = detectedLLM;
 
   // Smart filename: LLM + first user question summary + date
@@ -510,6 +577,20 @@ export default function App() {
   };
   exportPdfRef.current = handleExportPdf;
 
+  const [isExportingNotebookLM, setIsExportingNotebookLM] = useState(false);
+  const handleExportNotebookLM = useCallback(async () => {
+    setIsExportingNotebookLM(true);
+    try {
+      const md = generateMarkdown(currentTurns, selectedLLM);
+      await navigator.clipboard.writeText(md);
+      window.open('https://notebooklm.google.com/', '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error('Failed to copy text to NotebookLM context', err);
+    } finally {
+      setTimeout(() => setIsExportingNotebookLM(false), 2500);
+    }
+  }, [currentTurns, selectedLLM]);
+
   const handleExportMarkdown = useCallback(() => {
     const md = generateMarkdown(currentTurns, selectedLLM);
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
@@ -549,7 +630,7 @@ export default function App() {
     a.download = `${exportFilename}.html`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [currentTurns, selectedLLM, exportFilename]);
+  }, [currentTurns, selectedLLM, exportFilename, activeSource.title]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -575,7 +656,7 @@ export default function App() {
       <header className="app-header">
         <div className="brand">
           <div className="brand-logo"><FileText size={20} /></div>
-          <div className="brand-text">GEMINI PDF TOOL <span className="beta-tag">PRO</span></div>
+          <div className="brand-text">{t.appTitle} <span className="beta-tag">PRO</span></div>
         </div>
 
         <div className="header-stats no-print">
@@ -585,34 +666,40 @@ export default function App() {
 
         <div className="header-actions">
           <div className={`split-method-badge no-print ${splitMethod !== 'none' ? 'active' : ''}`}>
-            {splitMethod === 'regex' && 'Regex'}
-            {splitMethod === 'gemini-api' && 'Gemini API'}
-            {splitMethod === 'none' && (hasApiKey() ? 'Ready' : 'No API Key')}
+            {splitMethod === 'regex' && t.regexMode}
+            {splitMethod === 'gemini-api' && t.geminiApiMode}
+            {splitMethod === 'none' && (hasApiKey() ? t.readyMode : t.noApiKeyMode)}
           </div>
           <div className="template-selector no-print">
-            <button onClick={() => setPdfTemplate('professional')} className={`template-btn ${pdfTemplate === 'professional' ? 'active' : ''}`} aria-label="Professional template"><Layout size={14} /></button>
-            <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`} aria-label="Academic template"><GraduationCap size={14} /></button>
-            <button onClick={() => setPdfTemplate('executive')} className={`template-btn ${pdfTemplate === 'executive' ? 'active' : ''}`} aria-label="Executive template"><Briefcase size={14} /></button>
+            <button onClick={() => setPdfTemplate('professional')} className={`template-btn ${pdfTemplate === 'professional' ? 'active' : ''}`} data-tooltip={t.proTemplate} aria-label="Professional template"><Layout size={14} /></button>
+            <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`} data-tooltip={t.academicTemplate} aria-label="Academic template"><GraduationCap size={14} /></button>
+            <button onClick={() => setPdfTemplate('executive')} className={`template-btn ${pdfTemplate === 'executive' ? 'active' : ''}`} data-tooltip={t.execTemplate} aria-label="Executive template"><Briefcase size={14} /></button>
           </div>
-          <button onClick={toggleTheme} className="theme-toggle no-print" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+          <button onClick={toggleLang} className="theme-toggle no-print" data-tooltip={lang === 'en' ? t.switchToJapanese : t.switchToEnglish}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{lang === 'en' ? 'JP' : 'EN'}</span>
+          </button>
+          <button onClick={toggleTheme} className="theme-toggle no-print" data-tooltip={theme === 'dark' ? t.switchToLightMode : t.switchToDarkMode} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print ${showConsole ? 'active' : ''}`} title="API Console" aria-label="Toggle API console">
+          <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print ${showConsole ? 'active' : ''}`} data-tooltip={t.apiConsole} aria-label="Toggle API console">
             <Terminal size={15} />
           </button>
-          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className="btn btn-ghost no-print" title="Settings (Ctrl+,)" aria-label="Open settings">
+          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className="btn btn-ghost no-print" data-tooltip={t.settingsTooltip} aria-label="Open settings">
             <Settings size={15} />
           </button>
-          <button onClick={handleExportMarkdown} className="btn btn-ghost no-print" title="Export as Markdown (.md)" aria-label="Export as Markdown">
+          <button onClick={handleExportMarkdown} className="btn btn-ghost no-print" data-tooltip={t.exportMd} aria-label="Export as Markdown">
             <FileDown size={15} />
           </button>
-          <button onClick={handleExportJSON} className="btn btn-ghost no-print" title="Export as JSON" aria-label="Export as JSON">
+          <button onClick={handleExportJSON} className="btn btn-ghost no-print" data-tooltip={t.exportJson} aria-label="Export as JSON">
             <FileText size={15} />
           </button>
-          <button onClick={handleExportHTML} className="btn btn-ghost no-print" title="Export as HTML" aria-label="Export as HTML">
+          <button onClick={handleExportHTML} className="btn btn-ghost no-print" data-tooltip={t.exportHtml} aria-label="Export as HTML">
             <Layout size={15} />
           </button>
-          <button onClick={handleExportPdf} disabled={exporting} className="btn btn-primary" title="Export PDF (Ctrl+P)">
+          <button onClick={handleExportNotebookLM} className="btn btn-ghost no-print" data-tooltip={t.sendToNotebookLM} aria-label="Upload to NotebookLM">
+            {isExportingNotebookLM ? <Check size={15} color="#10b981" /> : <BookOpen size={15} />}
+          </button>
+          <button onClick={handleExportPdf} disabled={exporting} className="btn btn-primary" data-tooltip={t.exportPdf} aria-label="Export PDF">
             <Download size={15} /> {exporting ? 'Generating...' : 'PDF'}
           </button>
         </div>
@@ -632,7 +719,7 @@ export default function App() {
       <main className="app-main">
         <aside className="source-sidebar no-print mobile-hidden-sidebar">
           <div className="sidebar-header">
-            <span>SOURCES ({sources.length})</span>
+            <span>{t.sources} ({sources.length})</span>
             <button onClick={handleAddSource} className="add-source-btn">
               <Plus size={14} />
             </button>
@@ -665,7 +752,7 @@ export default function App() {
 
         <section className={`panel panel-left ${mobileTab !== 'editor' ? 'mobile-hidden' : ''}`}>
           <div className="panel-header">
-            <span className="panel-title">EDITOR: {activeSource.title}</span>
+            <span className="panel-title">{t.editor}: {activeSource.title}</span>
             <button className="btn btn-ghost upload-btn no-print" onClick={() => fileInputRef.current?.click()} title="Upload text file" aria-label="Upload text file">
               <Upload size={13} />
             </button>
@@ -675,51 +762,52 @@ export default function App() {
             detected={detectedLLM}
           />
           <div className="api-features no-print">
-            <span className="api-features-label">Enhance:</span>
+            <span className="api-features-label">{t.enhance}</span>
             <button className="api-feature-chip on" disabled title="Always on">
-              <Check size={10} strokeWidth={3} /> Split
+              <Check size={10} strokeWidth={3} /> {t.split}
             </button>
+
             <button
               className={`api-feature-chip ${apiFeatures.has('format') ? 'on' : 'off'}`}
               onClick={() => toggleFeature('format')}
               title="Restore bold, bullets, headings, numbered lists"
             >
-              {apiFeatures.has('format') && <Check size={10} strokeWidth={3} />} Formatting
+              {apiFeatures.has('format') && <Check size={10} strokeWidth={3} />} {t.formatting}
             </button>
             <button
               className={`api-feature-chip ${apiFeatures.has('tables') ? 'on' : 'off'}`}
               onClick={() => toggleFeature('tables')}
               title="Reconstruct markdown tables from flat text"
             >
-              {apiFeatures.has('tables') ? <Check size={10} strokeWidth={3} /> : <Table size={10} />} Tables
+              {apiFeatures.has('tables') ? <Check size={10} strokeWidth={3} /> : <Table size={10} />} {t.tables}
             </button>
             <button
               className={`api-feature-chip ${apiFeatures.has('code') ? 'on' : 'off'}`}
               onClick={() => toggleFeature('code')}
               title="Re-fence code blocks with language detection"
             >
-              {apiFeatures.has('code') ? <Check size={10} strokeWidth={3} /> : <>{'\u003C\u003E'}</>} Code
+              {apiFeatures.has('code') ? <Check size={10} strokeWidth={3} /> : <>{'\u003C\u003E'}</>} {t.code}
             </button>
             <button
               className={`api-feature-chip ${apiFeatures.has('latex') ? 'on' : 'off'}`}
               onClick={() => toggleFeature('latex')}
               title="Restore LaTeX math expressions ($inline$ and $$block$$)"
             >
-              {apiFeatures.has('latex') ? <Check size={10} strokeWidth={3} /> : <span style={{fontStyle: 'italic', fontFamily: 'serif', fontWeight: 700}}>x</span>} LaTeX
+              {apiFeatures.has('latex') ? <Check size={10} strokeWidth={3} /> : <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontWeight: 700 }}>x</span>} {t.latex}
             </button>
           </div>
           <textarea
-            className="raw-input"
+            className="editor-textarea"
             value={activeSource.content}
             onChange={e => handleUpdateSourceContent(e.target.value)}
-            placeholder="Paste log here..."
+            placeholder={t.pasteLogHere}
             spellCheck={false}
           />
         </section>
 
         <section className={`panel panel-right ${mobileTab !== 'preview' ? 'mobile-hidden' : ''}`}>
           <div className="panel-header">
-            <span className="panel-title">PREVIEW</span>
+            <span className="panel-title">{t.preview}</span>
           </div>
           <div className="preview-scroll" ref={scrollRef}>
             <div className={`preview-page theme-${pdfTemplate}`} ref={previewRef}>
@@ -731,8 +819,8 @@ export default function App() {
               {isClassifying && (
                 <div className="classifying-banner no-print" role="status" aria-live="polite">
                   <Zap size={14} className="animate-pulse" />
-                  <span>Processing with Gemini API...</span>
-                  <button className="cancel-enhance-btn" onClick={handleCancelEnhance}>Cancel</button>
+                  <span>{t.processingApi}</span>
+                  <button className="cancel-enhance-btn" onClick={handleCancelEnhance}>{t.cancel}</button>
                 </div>
               )}
 
@@ -740,18 +828,18 @@ export default function App() {
                 const errType = apiError.includes('429') || apiError.includes('Rate limit')
                   ? 'rate-limit'
                   : apiError.includes('401') || apiError.includes('403') || apiError.includes('Auth')
-                  ? 'auth'
-                  : apiError.includes('Network') || apiError.includes('connect')
-                  ? 'network'
-                  : apiError.includes('No API key') || apiError.includes('configured')
-                  ? 'no-key'
-                  : 'generic';
+                    ? 'auth'
+                    : apiError.includes('Network') || apiError.includes('connect')
+                      ? 'network'
+                      : apiError.includes('No API key') || apiError.includes('configured')
+                        ? 'no-key'
+                        : 'generic';
                 const labels: Record<string, { title: string; cls: string }> = {
                   'rate-limit': { title: 'Rate Limit', cls: 'api-error-banner--rate-limit' },
-                  'auth':       { title: 'Auth Error', cls: 'api-error-banner--auth' },
-                  'network':    { title: 'Network Error', cls: 'api-error-banner--network' },
-                  'no-key':     { title: 'No API Key', cls: 'api-error-banner--no-key' },
-                  'generic':    { title: 'API Error', cls: '' },
+                  'auth': { title: 'Auth Error', cls: 'api-error-banner--auth' },
+                  'network': { title: 'Network Error', cls: 'api-error-banner--network' },
+                  'no-key': { title: 'No API Key', cls: 'api-error-banner--no-key' },
+                  'generic': { title: 'API Error', cls: '' },
                 };
                 const { title, cls } = labels[errType];
                 return (
@@ -769,14 +857,33 @@ export default function App() {
               })()}
 
               {!isClassifying && !apiError && splitMethod === 'gemini-api' && (
-                <div className="ai-success-banner no-print" role="status">
-                  <Zap size={14} />
-                  <span>Auto-split by Gemini API</span>
-                  {tokenUsage && (
-                    <span className="token-usage">
-                      ({tokenUsage.promptTokens.toLocaleString()} in + {tokenUsage.responseTokens.toLocaleString()} out = {tokenUsage.totalTokens.toLocaleString()} tokens)
-                    </span>
-                  )}
+                <div className="ai-success-banner no-print" role="status" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <Zap size={14} />
+                    <span>{t.autoSplitSuccess}</span>
+                    {tokenUsage && (
+                      <span className="token-usage">
+                        ({tokenUsage.promptTokens.toLocaleString()} in + {tokenUsage.responseTokens.toLocaleString()} out = {tokenUsage.totalTokens.toLocaleString()} tokens)
+                      </span>
+                    )}
+                  </div>
+                  <div className="sync-retry-row">
+                    <input
+                      type="text"
+                      placeholder={t.whatWasIssue}
+                      value={customInstructions}
+                      onChange={e => setCustomInstructions(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleManualApiRetry(); }}
+                      className="instruction-input"
+                    />
+                    <button
+                      className="sync-banner-btn"
+                      onClick={handleManualApiRetry}
+                      title="Force API to re-evaluate the current text and generate a fresh split"
+                    >
+                      <RefreshCcw size={14} /> {t.syncApi}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -784,15 +891,15 @@ export default function App() {
                 <div className="enhance-card no-print">
                   <button className="enhance-card-dismiss" onClick={() => setEnhanceDismissed(true)}><X size={14} /></button>
                   <div className="enhance-card-icon"><Sparkles size={20} /></div>
-                  <div className="enhance-card-title">Enhance with AI</div>
-                  <div className="enhance-card-desc">Polish formatting using Gemini API. Select features below — uses tokens only when you click Enhance.</div>
+                  <div className="enhance-card-title">{t.enhanceCardTitle}</div>
+                  <div className="enhance-card-desc">{t.enhanceCardDesc}</div>
                   <div className="enhance-card-features">
                     {(['format', 'tables', 'code', 'latex'] as ApiFeature[]).map(f => {
                       const labels: Record<string, { name: string; hint: string }> = {
-                        format: { name: 'Formatting', hint: 'Bold, lists, headings' },
-                        tables: { name: 'Tables', hint: 'Reconstruct pipe tables' },
-                        code: { name: 'Code', hint: 'Re-fence with language' },
-                        latex: { name: 'LaTeX', hint: 'Restore math delimiters' },
+                        format: { name: t.formatting, hint: 'Bold, lists, headings' },
+                        tables: { name: t.tables, hint: 'Reconstruct pipe tables' },
+                        code: { name: t.code, hint: 'Re-fence with language' },
+                        latex: { name: t.latex, hint: 'Restore math delimiters' },
                       };
                       const { name, hint } = labels[f];
                       return (
@@ -808,21 +915,50 @@ export default function App() {
                       );
                     })}
                   </div>
-                  <button className="enhance-card-btn" onClick={handleEnhanceGemini} disabled={!hasAnyEnhanceFeature}>
-                    <Sparkles size={14} /> Enhance {parsed.turns.filter(t => t.role === 'assistant').length} Response{parsed.turns.filter(t => t.role === 'assistant').length !== 1 ? 's' : ''}
-                  </button>
+                  <div className="sync-retry-row">
+                    <input
+                      type="text"
+                      placeholder={t.customInstructionsEnhance}
+                      value={customInstructions}
+                      onChange={e => setCustomInstructions(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleEnhanceGemini(); }}
+                      className="instruction-input"
+                    />
+                    <button className="enhance-card-btn" onClick={handleEnhanceGemini} disabled={!hasAnyEnhanceFeature}>
+                      <Sparkles size={14} /> {t.enhanceBtnPrefix} {parsed.turns.filter(t => t.role === 'assistant').length} {parsed.turns.filter(t => t.role === 'assistant').length !== 1 ? t.responsesSuffix : t.responseSuffix}
+                    </button>
+                  </div>
                 </div>
               )}
 
               {!isClassifying && !apiError && overrideTurns && hasDirectMarkers && (
-                <div className="ai-success-banner no-print">
-                  <Sparkles size={14} />
-                  <span>AI Enhancement applied</span>
-                  {tokenUsage && (
-                    <span className="token-usage">
-                      ({tokenUsage.promptTokens.toLocaleString()} in + {tokenUsage.responseTokens.toLocaleString()} out = {tokenUsage.totalTokens.toLocaleString()} tokens)
-                    </span>
-                  )}
+                <div className="ai-success-banner no-print" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <Sparkles size={14} />
+                    <span>{t.aiEnhancementApplied}</span>
+                    {tokenUsage && (
+                      <span className="token-usage">
+                        ({tokenUsage.promptTokens.toLocaleString()} in + {tokenUsage.responseTokens.toLocaleString()} out = {tokenUsage.totalTokens.toLocaleString()} tokens)
+                      </span>
+                    )}
+                  </div>
+                  <div className="sync-retry-row">
+                    <input
+                      type="text"
+                      placeholder={t.whatWasIssue}
+                      value={customInstructions}
+                      onChange={e => setCustomInstructions(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleManualApiRetry(); }}
+                      className="instruction-input"
+                    />
+                    <button
+                      className="sync-banner-btn"
+                      onClick={handleManualApiRetry}
+                      title="Enhance formatting with AI"
+                    >
+                      <RefreshCcw size={14} /> {t.enhanceApi}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -898,12 +1034,28 @@ export default function App() {
         <div className="modal-overlay no-print" onClick={() => setShowSettings(false)} role="dialog" aria-modal="true" aria-label="Settings">
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>System Settings</h3>
+              <h3>{t.settingsTitle}</h3>
               <button className="btn-close" onClick={() => setShowSettings(false)} aria-label="Close settings"><X size={18} /></button>
             </div>
             <div className="settings-body">
+              <div className="setting-group" style={{ marginBottom: '20px' }}>
+                <label>{t.settingsEnterPassword}</label>
+                <div className="api-key-input-wrapper">
+                  <input
+                    type="password"
+                    value={apiPassword}
+                    onChange={(e) => setApiPassword(e.target.value)}
+                    onBlur={() => commitApiPassword(apiPassword)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commitApiPassword(apiPassword); }}
+                    placeholder="Enter password..."
+                    aria-label="API Password"
+                  />
+                  {apiPassword === 'kenseiyasue123' && <div className="api-badge" style={{ background: '#10b981', color: '#fff' }}>Unlocked</div>}
+                </div>
+              </div>
+
               <div className="setting-group">
-                <label>Google AI API Key (Gemini)</label>
+                <label>{t.settingsOrProvideKey}</label>
                 <div className="api-key-input-wrapper">
                   <input
                     type="password"
@@ -913,18 +1065,19 @@ export default function App() {
                     onKeyDown={(e) => { if (e.key === 'Enter') commitApiKey(apiKeyDraft); }}
                     placeholder="AIza..."
                     aria-label="Google AI API Key"
+                    disabled={apiPassword === 'kenseiyasue123'}
                   />
                   <div className="api-badge google-badge">gemini-2.5-flash</div>
                 </div>
                 <p className="setting-hint">
-                  Required for accurate User/AI splitting of ChatGPT, Claude, and other chat logs.
-                  Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{color: 'var(--color-primary-500)'}}>Google AI Studio</a>.
+                  {t.settingsHint}
+                  {t.getFreeKey} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary-500)' }}>Google AI Studio</a>.
                 </p>
-                {hasApiKey() && (
-                  <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px'}}>
+                {(hasApiKey() || apiPassword === 'kenseiyasue123') && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
                     <button
                       className="btn btn-ghost"
-                      style={{fontSize: '0.75rem', padding: '4px 12px'}}
+                      style={{ fontSize: '0.75rem', padding: '4px 12px' }}
                       disabled={apiTestResult === 'testing'}
                       onClick={async () => {
                         setApiTestResult('testing');
@@ -936,19 +1089,19 @@ export default function App() {
                         }
                       }}
                     >
-                      {apiTestResult === 'testing' ? 'Testing...' : 'Test API Key'}
+                      {apiTestResult === 'testing' ? t.testing : t.testApiKey}
                     </button>
-                    {apiTestResult === 'ok' && <span style={{color: '#16a34a', fontSize: '0.75rem', fontWeight: 600}}>API OK</span>}
-                    {apiTestResult === 'fail' && <span style={{color: '#dc2626', fontSize: '0.75rem', fontWeight: 600}}>{getLastApiError()?.message || 'Failed'}</span>}
+                    {apiTestResult === 'ok' && <span style={{ color: '#16a34a', fontSize: '0.75rem', fontWeight: 600 }}>{t.apiOk}</span>}
+                    {apiTestResult === 'fail' && <span style={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: 600 }}>{getLastApiError()?.message || 'Failed'}</span>}
                   </div>
                 )}
                 {apiError && (
-                  <p className="setting-hint" style={{color: '#dc2626', fontWeight: 600}}>{apiError}</p>
+                  <p className="setting-hint" style={{ color: '#dc2626', fontWeight: 600 }}>{apiError}</p>
                 )}
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-primary" onClick={() => { commitApiKey(apiKeyDraft); setShowSettings(false); }}>Done</button>
+              <button className="btn btn-primary" onClick={() => { commitApiKey(apiKeyDraft); commitApiPassword(apiPassword); setShowSettings(false); }}>{t.done}</button>
             </div>
           </div>
         </div>

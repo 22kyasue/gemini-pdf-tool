@@ -1,4 +1,5 @@
 import { Search } from 'lucide-react';
+import { useTranslation } from '../hooks/useTranslation';
 
 // ══════════════════════════════════════════════════════════
 // LLM SELECTOR — Read-only display of detected LLM
@@ -14,11 +15,12 @@ const LLM_CHIPS: { value: SimpleLLM; label: string; icon: string }[] = [
 ];
 
 export function LLMSelector({ detected }: { detected: SimpleLLM }) {
+    const { t } = useTranslation();
     return (
         <div className="llm-selector">
             <div className="llm-detect-info">
                 <Search size={12} strokeWidth={2} />
-                <span>Detected: <strong>{detected}</strong></span>
+                <span>{t.detected} <strong>{detected}</strong></span>
             </div>
             <div className="llm-chips">
                 {LLM_CHIPS.map(chip => (

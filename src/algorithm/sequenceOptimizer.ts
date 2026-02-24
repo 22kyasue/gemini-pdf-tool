@@ -52,7 +52,7 @@ function transitionCost(
     }
 
     if (fromRole === 'ai' && toRole === 'user') {
-        let cost = params.aiToUser;
+        const cost = params.aiToUser;
         // After AI response, user following up is natural
         return cost;
     }
