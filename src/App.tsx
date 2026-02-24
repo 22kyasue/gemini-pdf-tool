@@ -1,11 +1,11 @@
 import { useState, useMemo, useCallback, useRef, useEffect, useDeferredValue } from 'react';
 import {
   FileText, Download, User, Table, Zap,
-  GraduationCap, Briefcase,
+  GraduationCap,
   Layout, Plus, Trash, Settings, X,
   Sun, Moon, Terminal, Check, FileQuestion,
   Sparkles, Upload, FileDown, Edit3, Eye,
-  BookOpen, RefreshCcw
+  BookOpen, RefreshCcw, ChevronDown
 } from 'lucide-react';
 import { splitChatWithGemini, enhanceContentWithGemini, generateChatTitle, hasApiKey, getLastApiError, clearLastApiError } from './utils/llmParser';
 import type { TokenUsage, ApiFeature } from './utils/llmParser';
@@ -90,9 +90,9 @@ export default function App() {
   const [activeSourceId, setActiveSourceId] = useState<string>(() => {
     return localStorage.getItem(LS_ACTIVE) || sources[0]?.id || 'initial';
   });
-  const [pdfTemplate, setPdfTemplate] = useState<'professional' | 'academic' | 'executive'>(() => {
+  const [pdfTemplate, setPdfTemplate] = useState<'professional' | 'academic' | 'cyber'>(() => {
     const saved = localStorage.getItem(LS_TEMPLATE);
-    if (saved === 'professional' || saved === 'academic' || saved === 'executive') return saved;
+    if (saved === 'professional' || saved === 'academic' || saved === 'cyber') return saved;
     return 'professional';
   });
 
@@ -673,7 +673,7 @@ export default function App() {
           <div className="template-selector no-print">
             <button onClick={() => setPdfTemplate('professional')} className={`template-btn ${pdfTemplate === 'professional' ? 'active' : ''}`} data-tooltip={t.proTemplate} aria-label="Professional template"><Layout size={14} /></button>
             <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`} data-tooltip={t.academicTemplate} aria-label="Academic template"><GraduationCap size={14} /></button>
-            <button onClick={() => setPdfTemplate('executive')} className={`template-btn ${pdfTemplate === 'executive' ? 'active' : ''}`} data-tooltip={t.execTemplate} aria-label="Executive template"><Briefcase size={14} /></button>
+            <button onClick={() => setPdfTemplate('cyber')} className={`template-btn ${pdfTemplate === 'cyber' ? 'active' : ''}`} data-tooltip={t.cyberTemplate} aria-label="Cyber template"><Zap size={14} /></button>
           </div>
           <button onClick={toggleLang} className="theme-toggle no-print" data-tooltip={lang === 'en' ? t.switchToJapanese : t.switchToEnglish}>
             <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{lang === 'en' ? 'JP' : 'EN'}</span>
@@ -684,18 +684,26 @@ export default function App() {
           <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print ${showConsole ? 'active' : ''}`} data-tooltip={t.apiConsole} aria-label="Toggle API console">
             <Terminal size={15} />
           </button>
-          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className="btn btn-ghost no-print" data-tooltip={t.settingsTooltip} aria-label="Open settings">
+          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className={`btn btn-ghost no-print relative ${!hasApiKey() ? 'btn-attention' : ''}`} data-tooltip={t.settingsTooltip} aria-label="Open settings">
             <Settings size={15} />
+            {!hasApiKey() && <span className="attention-dot" />}
           </button>
-          <button onClick={handleExportMarkdown} className="btn btn-ghost no-print" data-tooltip={t.exportMd} aria-label="Export as Markdown">
-            <FileDown size={15} />
-          </button>
-          <button onClick={handleExportJSON} className="btn btn-ghost no-print" data-tooltip={t.exportJson} aria-label="Export as JSON">
-            <FileText size={15} />
-          </button>
-          <button onClick={handleExportHTML} className="btn btn-ghost no-print" data-tooltip={t.exportHtml} aria-label="Export as HTML">
-            <Layout size={15} />
-          </button>
+          <div className="export-dropdown no-print">
+            <button className="btn btn-ghost" data-tooltip="Export Options" aria-label="Export Menu">
+              <Download size={15} /> <ChevronDown size={12} style={{ marginLeft: 2, marginRight: -2, opacity: 0.6 }} />
+            </button>
+            <div className="export-menu">
+              <button onClick={handleExportMarkdown} className="btn btn-ghost" aria-label="Export as Markdown">
+                <FileDown size={14} /> Markdown
+              </button>
+              <button onClick={handleExportJSON} className="btn btn-ghost" aria-label="Export as JSON">
+                <FileText size={14} /> JSON
+              </button>
+              <button onClick={handleExportHTML} className="btn btn-ghost" aria-label="Export as HTML">
+                <Layout size={14} /> HTML
+              </button>
+            </div>
+          </div>
           <button onClick={handleExportNotebookLM} className="btn btn-ghost no-print" data-tooltip={t.sendToNotebookLM} aria-label="Upload to NotebookLM">
             {isExportingNotebookLM ? <Check size={15} color="#10b981" /> : <BookOpen size={15} />}
           </button>
