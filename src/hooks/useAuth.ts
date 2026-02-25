@@ -37,10 +37,12 @@ export function useAuth(): AuthState {
     return () => subscription.unsubscribe();
   }, []);
 
+  const appUrl = window.location.origin + import.meta.env.BASE_URL;
+
   const signInWithGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: appUrl },
     });
     if (error) throw error;
   };
@@ -54,7 +56,7 @@ export function useAuth(): AuthState {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: window.location.origin },
+      options: { emailRedirectTo: appUrl },
     });
     if (error) throw error;
   };
