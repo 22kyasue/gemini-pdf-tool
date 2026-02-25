@@ -3,9 +3,9 @@ declare module 'html2pdf.js' {
         margin?: number | number[];
         filename?: string;
         image?: { type: string; quality: number };
-        html2canvas?: { scale?: number; useCORS?: boolean;[key: string]: any };
-        jsPDF?: { unit?: string; format?: string; orientation?: string;[key: string]: any };
-        [key: string]: any;
+        html2canvas?: { scale?: number; useCORS?: boolean; [key: string]: unknown };
+        jsPDF?: { unit?: string; format?: string; orientation?: string; [key: string]: unknown };
+        [key: string]: unknown;
     }
 
     interface Html2Pdf {

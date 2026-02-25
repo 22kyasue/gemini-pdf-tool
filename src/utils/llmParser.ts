@@ -67,7 +67,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** Extract HTTP status from SDK errors */
 function getErrorStatus(error: unknown): number {
-    const err = error as any;
+    const err = error as { status?: number; response?: { status?: number }; errorDetails?: Array<{ status?: number }>; httpCode?: number; code?: number; constructor?: { name?: string } };
     const status = err?.status ?? err?.response?.status ?? err?.errorDetails?.[0]?.status ?? 0;
     console.log(`[Gemini] Error inspection: status=${status}, err.status=${err?.status}, err.httpCode=${err?.httpCode}, err.code=${err?.code}, constructor=${err?.constructor?.name}`);
     return status;
@@ -77,7 +77,7 @@ function getErrorStatus(error: unknown): number {
  * Low-level: send a prompt to Gemini and get raw text back.
  * Retries only on 503 (overload). 429 (rate limit) fails immediately to preserve quota.
  */
-async function callGemini(prompt: string, systemPrompt: string, _maxTokens = 4096): Promise<GeminiResult | null> {
+async function callGemini(prompt: string, systemPrompt: string): Promise<GeminiResult | null> {
     const apiKey = getApiKey();
     if (!apiKey) {
         console.log('[Gemini] No API key set — skipping');
@@ -111,7 +111,7 @@ async function callGemini(prompt: string, systemPrompt: string, _maxTokens = 409
         } catch (error: unknown) {
             lastError = error;
             const status = getErrorStatus(error);
-            const errObj = error as any;
+            const errObj = error as { message?: string; errorDetails?: unknown; response?: { data?: unknown } };
             console.error(`[Gemini] ERROR — status: ${status}, attempt: ${attempt + 1}, message: ${errObj?.message || 'unknown'}, errorDetails: ${JSON.stringify(errObj?.errorDetails || errObj?.response?.data || 'none')}`);
 
             // 503 only: retry with backoff (server overload is temporary)
@@ -125,7 +125,7 @@ async function callGemini(prompt: string, systemPrompt: string, _maxTokens = 409
             // Everything else: fail immediately (don't waste quota)
             let message: string;
             if (status === 400) {
-                message = `Request error (400): ${(error as any).message || 'Unknown request error'}`;
+                message = `Request error (400): ${(error as Error).message || 'Unknown request error'}`;
             } else if (status === 401 || status === 403) {
                 message = `Auth error (${status}): Invalid API key. Generate a new key at Google AI Studio.`;
             } else if (status === 429) {
@@ -133,7 +133,7 @@ async function callGemini(prompt: string, systemPrompt: string, _maxTokens = 409
             } else if (status === 503) {
                 message = `API overloaded (503): Google AI API is temporarily busy.`;
             } else if (status) {
-                message = `API error (${status}): ${(error as any).message || 'Unknown error'}`;
+                message = `API error (${status}): ${(error as Error).message || 'Unknown error'}`;
             } else {
                 message = `Network error: Cannot connect to API. Check your internet connection.`;
             }
@@ -223,7 +223,7 @@ export async function splitChatWithGemini(rawText: string, features?: Set<ApiFea
 
     try {
         const systemPrompt = buildSystemPrompt(features ?? new Set(['split', 'format', 'tables', 'code']), customInstructions);
-        const result = await callGemini(truncated, systemPrompt, 8192);
+        const result = await callGemini(truncated, systemPrompt);
         if (!result) return null;
 
         // Extract JSON array from response
@@ -233,11 +233,15 @@ export async function splitChatWithGemini(rawText: string, features?: Set<ApiFea
             return null;
         }
 
-        const parsed = JSON.parse(jsonMatch[0]) as any[];
+        const parsed = JSON.parse(jsonMatch[0]) as unknown[];
         if (!Array.isArray(parsed) || parsed.length === 0) return null;
 
+        interface RawMessage { role?: unknown; content: string; }
+        const isRawMessage = (item: unknown): item is RawMessage =>
+            !!item && typeof item === 'object' && typeof (item as Record<string, unknown>).content === 'string' && Boolean((item as RawMessage).content.trim());
+
         const messages = parsed
-            .filter(item => item && typeof item.content === 'string' && item.content.trim())
+            .filter(isRawMessage)
             .map(item => ({
                 role: item.role === 'user' ? 'user' as const : 'ai' as const,
                 content: item.content.trim(),
@@ -269,7 +273,7 @@ Do not use quotes. Do not include labels like "Title:". Just return the short ti
     const truncated = rawText.slice(0, 8000);
 
     try {
-        const result = await callGemini(truncated, systemPrompt, 64);
+        const result = await callGemini(truncated, systemPrompt);
         if (result && result.text) {
             // strip quotes just in case
             let clean = result.text.replace(/^["']|["']$/g, '').trim();
@@ -371,7 +375,7 @@ CRITICAL RULES:
 - Return the enhanced text directly, no JSON wrapping, no explanations${conflictRules}`;
 
     const truncated = content.slice(0, 50000);
-    const result = await callGemini(truncated, systemPrompt, 8192);
+    const result = await callGemini(truncated, systemPrompt);
     if (!result) return null;
     return { text: result.text, tokens: result.tokens };
 }

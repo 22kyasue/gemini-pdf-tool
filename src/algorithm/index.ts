@@ -7,7 +7,7 @@
 //          groupMessages → smoothGroups
 // ══════════════════════════════════════════════════════════
 
-import type { AnalysisResult, AnalyzedMessage, SemanticGroup } from './types';
+import type { AnalysisResult, AnalyzedMessage, SemanticGroup, OptimizedBlock } from './types';
 import { normalize } from './normalizer';
 import { segment } from './segmenter';
 import { extractAllFeatures } from './featureExtractor';
@@ -29,7 +29,7 @@ import { repairMarkdown, beautifyCitations } from '../utils/markdownRepair';
  */
 export function analyzeConversation(inputs: string | string[]): AnalysisResult {
     const rawInputs = Array.isArray(inputs) ? inputs : [inputs];
-    let allProcessedBlocks: any[] = []; // Unified block list
+    let allProcessedBlocks: Array<OptimizedBlock & { sourceId: number; globalId: number }> = []; // Unified block list
 
     // ══════════════════════════════════════════════════════
     // Phase 1: Internal Processing (per document)

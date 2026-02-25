@@ -84,7 +84,7 @@ export default function App() {
     try {
       const saved = localStorage.getItem(LS_SOURCES);
       if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) return parsed; }
-    } catch { }
+    } catch { /* ignore parse errors */ }
     return [{ id: 'initial', title: 'Main Session', content: SAMPLE, llm: 'Gemini' }];
   });
   const [activeSourceId, setActiveSourceId] = useState<string>(() => {
@@ -111,7 +111,7 @@ export default function App() {
   // -- API Processing Options --
   const [apiFeatures, setApiFeatures] = useState<Set<ApiFeature>>(() => {
     const saved = localStorage.getItem('apiFeatures');
-    if (saved) try { return new Set(JSON.parse(saved)); } catch { }
+    if (saved) try { return new Set(JSON.parse(saved)); } catch { /* ignore parse errors */ }
     return new Set<ApiFeature>(['split', 'format', 'tables', 'code']);
   });
 
@@ -136,16 +136,16 @@ export default function App() {
     const orig = origConsole.current;
     const ts = () => new Date().toLocaleTimeString('ja-JP', { hour12: false });
 
-    const push = (level: LogEntry['level'], args: any[]) => {
+    const push = (level: LogEntry['level'], args: unknown[]) => {
       const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
       if (!text.includes('[Flow]') && !text.includes('[Gemini]')) return;
       const finalLevel = text.includes('SUCCESS') ? 'success' : level;
       setApiLogs(prev => [...prev.slice(-99), { time: ts(), level: finalLevel, msg: text }]);
     };
 
-    console.log = (...args: any[]) => { push('info', args); orig.log.apply(console, args); };
-    console.warn = (...args: any[]) => { push('warn', args); orig.warn.apply(console, args); };
-    console.error = (...args: any[]) => { push('error', args); orig.error.apply(console, args); };
+    console.log = (...args: unknown[]) => { push('info', args); orig.log.apply(console, args); };
+    console.warn = (...args: unknown[]) => { push('warn', args); orig.warn.apply(console, args); };
+    console.error = (...args: unknown[]) => { push('error', args); orig.error.apply(console, args); };
 
     return () => { console.log = orig.log; console.warn = orig.warn; console.error = orig.error; };
   }, []);
@@ -509,7 +509,7 @@ export default function App() {
         } : s));
         console.log(`[Gemini] SUCCESS — enhanced ${enhancedMap.size} turns, tokens: ${totalTokens.promptTokens} in + ${totalTokens.responseTokens} out = ${totalTokens.totalTokens} total`);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[Flow] Enhancement failed:', err);
       const apiErr = getLastApiError();
       if (apiErr) setApiError(apiErr.message);
@@ -543,7 +543,7 @@ export default function App() {
   const exportFilename = useMemo(() => {
     const firstQ = currentTurns.find(t => t.role === 'user');
     const snippet = firstQ
-      ? firstQ.content.split('\n')[0].trim().replace(/[^\w\s\-]/g, '').trim().slice(0, 50).trim()
+      ? firstQ.content.split('\n')[0].trim().replace(/[^\w\s-]/g, '').trim().slice(0, 50).trim()
       : '';
     const date = new Date().toISOString().slice(0, 10);
     const llmTag = selectedLLM === 'Other LLM' ? 'AI' : selectedLLM;
@@ -566,9 +566,9 @@ export default function App() {
       if (previewRef.current) {
         await exportToPdf(previewRef.current, exportFilename, scrollRef.current);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[Flow] PDF export failed:', err);
-      setPdfError(err?.message || 'PDF generation failed');
+      setPdfError(err instanceof Error ? err.message : 'PDF generation failed');
       setTimeout(() => setPdfError(null), 5000);
     } finally {
       setIsPdfExporting(false);
