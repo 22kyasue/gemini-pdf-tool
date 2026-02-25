@@ -5,7 +5,7 @@ import {
   Layout, Plus, Trash, Settings, X,
   Sun, Moon, Terminal, Check, FileQuestion,
   Sparkles, Upload, FileDown, Edit3, Eye,
-  BookOpen, RefreshCcw, ChevronDown
+  BookOpen, RefreshCcw, ChevronDown, LogIn, LogOut, Crown
 } from 'lucide-react';
 import { splitChatWithGemini, enhanceContentWithGemini, generateChatTitle, hasApiKey, getLastApiError, clearLastApiError } from './utils/llmParser';
 import type { TokenUsage, ApiFeature } from './utils/llmParser';
@@ -35,6 +35,10 @@ import type { SimpleLLM } from './components/LLMSelector';
 import { PdfPrintHeader } from './components/PdfPrintHeader';
 import { _onRenderError } from './components/ErrorBoundary';
 import { useTranslation } from './hooks/useTranslation';
+import { useAuth } from './hooks/useAuth';
+import { useUsage, FREE_CALL_LIMIT, FREE_WORD_LIMIT } from './hooks/useUsage';
+import { AuthModal } from './components/AuthModal';
+import { UpgradeModal } from './components/UpgradeModal';
 
 // -- Markdown export utility --
 function generateMarkdown(turns: Turn[], llm: string): string {
@@ -80,6 +84,23 @@ This confirms our 2026 sustainability targets are achievable ahead of schedule.`
 export default function App() {
   const { lang, toggleLang, t } = useTranslation();
 
+  // -- Auth & Usage --
+  const { user, signInWithGoogle, signInWithEmail, signUp, signOut } = useAuth();
+  const { plan, callsUsed, wordsUsed, isOverLimit, refresh: refreshUsage } = useUsage(user);
+
+  // hasApiAccess: true if user has own key OR is signed in
+  const hasApiAccess = hasApiKey() || !!user;
+
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Show upgrade modal immediately if limit is reached and no own key
+  useEffect(() => {
+    if (isOverLimit && !hasApiKey() && user) {
+      // Don't auto-show; let the user trigger it by attempting an action
+    }
+  }, [isOverLimit, user]);
+
   const [sources, setSources] = useState<Source[]>(() => {
     try {
       const saved = localStorage.getItem(LS_SOURCES);
@@ -98,7 +119,6 @@ export default function App() {
 
   // Mobile tab state
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
-  // LLM override removed — selector is now read-only display
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [parseErrorToast, setParseErrorToast] = useState(false);
@@ -106,7 +126,6 @@ export default function App() {
   const [showConsole, setShowConsole] = useState(false);
   const [googleApiKey, setGoogleApiKey] = useState(() => localStorage.getItem('googleApiKey') || '');
   const [apiTestResult, setApiTestResult] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
-  const [apiPassword, setApiPassword] = useState(() => localStorage.getItem('apiPassword') || '');
 
   // -- API Processing Options --
   const [apiFeatures, setApiFeatures] = useState<Set<ApiFeature>>(() => {
@@ -232,14 +251,6 @@ export default function App() {
     setApiError(null);
   };
 
-  const commitApiPassword = (val: string) => {
-    const trimmed = val.trim();
-    setApiPassword(trimmed);
-    localStorage.setItem('apiPassword', trimmed);
-    clearLastApiError();
-    setApiError(null);
-  };
-
   const activeSource = sources.find(s => s.id === activeSourceId) || sources[0];
 
   const INPUT_CHAR_LIMIT = 500_000;
@@ -282,26 +293,22 @@ export default function App() {
   const lastTitlePrefixRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
-    if (!googleApiKey || !activeSource.content.trim() || activeSource.content.length < 50) return;
+    // Need either own key or authenticated user for title generation
+    if ((!googleApiKey && !user) || !activeSource.content.trim() || activeSource.content.length < 50) return;
 
-    // Auto title if the first 200 characters changed significantly (meaning a new chat was pasted)
     const currentPrefix = activeSource.content.slice(0, 200).trim();
     const lastPrefix = lastTitlePrefixRef.current[activeSourceId];
     const isDefault = activeSource.title === 'Main Session' || activeSource.title === 'New Source';
 
     if (!lastPrefix) {
-      // If we've never stored a prefix for this source in this session, assume it's stable 
-      // UNLESS the title is still the default (meaning it's brand new and needs a title)
       if (!isDefault) {
         lastTitlePrefixRef.current[activeSourceId] = currentPrefix;
         return;
       }
     } else if (lastPrefix === currentPrefix) {
-      // Prefix hasn't changed, meaning it's the same chat just appended to.
       return;
     }
 
-    // Use a short debounce to wait for user to finish pasting/typing
     if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
     titleTimerRef.current = setTimeout(() => {
       generateChatTitle(activeSource.content).then(newTitle => {
@@ -315,7 +322,7 @@ export default function App() {
     return () => {
       if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
     };
-  }, [activeSource.content, activeSource.title, activeSourceId, googleApiKey]);
+  }, [activeSource.content, activeSource.title, activeSourceId, googleApiKey, user]);
 
   const showParseError = useCallback(() => {
     setParseErrorToast(true);
@@ -330,16 +337,10 @@ export default function App() {
   const sourceContents = useMemo(() => deferredSources.map(s => s.content).join('\n---\n'), [deferredSources]);
 
   // ── Direct marker detection ──
-  // If the pasted text has clear role markers the regex parser handles well,
-  // skip the API entirely (saves tokens). Covers Gemini JP, ChatGPT JP, etc.
   const hasDirectMarkers = useMemo(() => {
-    // Gemini Japanese format
     if (/あなたのプロンプト|Gemini の回答|Gemini の返答/.test(sourceContents)) return true;
-    // ChatGPT Japanese format  (あなた: + ChatGPT:)
     if (/^あなた[:：]\s*/m.test(sourceContents) && /^ChatGPT[:：]\s*/mi.test(sourceContents)) return true;
-    // Claude Japanese format
     if (/^あなた[:：]\s*/m.test(sourceContents) && /^Claude[:：]\s*/mi.test(sourceContents)) return true;
-    // English explicit markers (You said: + X said:)
     if (/^You said:?\s*$/mi.test(sourceContents) && /^(ChatGPT|Claude|Gemini) said:?\s*$/mi.test(sourceContents)) return true;
     return false;
   }, [sourceContents]);
@@ -350,7 +351,6 @@ export default function App() {
     [activeSource.content]
   );
 
-  // Turns state is now primarily cached in the Source object to persist across refreshes
   const [isClassifying, setIsClassifying] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [customInstructions, setCustomInstructions] = useState('');
@@ -364,7 +364,14 @@ export default function App() {
   const WORD_LIMIT_FOR_API = 20_000;
 
   const triggerApiSplit = useCallback((sourceId: string, rawText: string, strInstructions?: string) => {
-    if (!hasApiKey() || !rawText.trim()) return;
+    if (!hasApiAccess || !rawText.trim()) return;
+
+    // Client-side paywall check (no own key + free limit reached)
+    if (!hasApiKey() && isOverLimit) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     const wordCount = rawText.split(/\s+/).length;
     if (wordCount > WORD_LIMIT_FOR_API) {
       console.log(`[Flow] Large document (${wordCount} words > ${WORD_LIMIT_FOR_API}) → skipping API`);
@@ -376,7 +383,7 @@ export default function App() {
     setIsClassifying(true);
     setApiError(null);
 
-    splitChatWithGemini(rawText, apiFeatures, strInstructions).then(result => {
+    splitChatWithGemini(rawText, apiFeatures, strInstructions, wordCount).then(result => {
       if (requestId !== apiRequestIdRef.current) return;
       if (result && result.messages.length > 0) {
         const converted: Turn[] = result.messages.map((msg, i) => ({
@@ -397,24 +404,30 @@ export default function App() {
           apiSplitTokens: result.tokens
         } : s));
         setApiError(null);
+        if (!hasApiKey()) refreshUsage();
       } else {
         const err = getLastApiError();
-        if (err) setApiError(err.message);
+        if (err) {
+          setApiError(err.message);
+          if (err.message.startsWith('LIMIT_EXCEEDED:')) {
+            setShowUpgradeModal(true);
+            refreshUsage();
+          }
+        }
       }
     }).catch(err => {
       if (requestId !== apiRequestIdRef.current) return;
-      console.error("AI split failed:", err);
+      console.error('[Flow] API split failed:', err);
       setApiError(`Split error: ${err.message}`);
     }).finally(() => {
       if (requestId === apiRequestIdRef.current) setIsClassifying(false);
     });
-  }, [apiFeatures]);
+  }, [apiFeatures, hasApiAccess, isOverLimit, refreshUsage]);
 
-  // Handle Automatic logic 
+  // Handle Automatic logic
   useEffect(() => {
-    if (hasDirectMarkers || !hasApiKey() || !activeSource.content.trim()) return;
+    if (hasDirectMarkers || !hasApiAccess || !activeSource.content.trim()) return;
 
-    // If completely cleared, wipe cache automatically
     if (activeSource.content.length === 0) {
       if (activeSource.apiSplitTurns) {
         setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, apiSplitTurns: undefined, apiSplitRawText: undefined } : s));
@@ -422,13 +435,11 @@ export default function App() {
       return;
     }
 
-    // Auto-trigger if it has never been parsed successfully
     if (!activeSource.apiSplitRawText || !activeSource.apiSplitTurns) {
       const timer = setTimeout(() => triggerApiSplit(activeSourceId, activeSource.content), 500);
       return () => clearTimeout(timer);
     }
 
-    // Auto-trigger if text changed by > 30%
     const oldLen = activeSource.apiSplitRawText.length;
     const newLen = activeSource.content.length;
     const diff = Math.abs(newLen - oldLen) / Math.max(oldLen, 1);
@@ -438,7 +449,7 @@ export default function App() {
       const timer = setTimeout(() => triggerApiSplit(activeSourceId, activeSource.content), 800);
       return () => clearTimeout(timer);
     }
-  }, [activeSource.content, activeSourceId, hasDirectMarkers, googleApiKey, triggerApiSplit]);
+  }, [activeSource.content, activeSourceId, hasDirectMarkers, hasApiAccess, googleApiKey, user, triggerApiSplit]);
 
   const overrideTurns = activeSource.apiSplitTurns || null;
   const tokenUsage = activeSource.apiSplitTokens || null;
@@ -448,19 +459,23 @@ export default function App() {
   const [enhanceDismissed, setEnhanceDismissed] = useState(false);
   const enhanceCancelledRef = useRef(false);
 
-  // Reset dismissed state when source changes
   useEffect(() => {
     setEnhanceDismissed(false);
   }, [sourceContents]);
 
-  // Show the enhance prompt when: Gemini markers + API key + any enhance feature enabled + not already enhanced
   const hasAnyEnhanceFeature = apiFeatures.has('format') || apiFeatures.has('tables') || apiFeatures.has('code') || apiFeatures.has('latex');
-  const showEnhancePrompt = hasDirectMarkers && hasApiKey() && !overrideTurns && !isClassifying && !enhanceDismissed
+  const showEnhancePrompt = hasDirectMarkers && hasApiAccess && !overrideTurns && !isClassifying && !enhanceDismissed
     && hasAnyEnhanceFeature
     && parsed.turns.some(t => t.role === 'assistant');
 
   const handleEnhanceGemini = useCallback(async () => {
     if (!hasDirectMarkers || parsed.turns.length === 0) return;
+
+    // Client-side paywall check
+    if (!hasApiKey() && isOverLimit) {
+      setShowUpgradeModal(true);
+      return;
+    }
 
     enhanceCancelledRef.current = false;
     setIsClassifying(true);
@@ -483,7 +498,8 @@ export default function App() {
           break;
         }
         console.log(`[Flow] Enhancing turn ${turn.index} (${turn.content.length} chars)...`);
-        const result = await enhanceContentWithGemini(turn.content, apiFeatures, customInstructions);
+        const wc = turn.content.split(/\s+/).length;
+        const result = await enhanceContentWithGemini(turn.content, apiFeatures, customInstructions, wc);
         if (result) {
           enhancedMap.set(turn.index, result.text);
           totalTokens = {
@@ -491,6 +507,14 @@ export default function App() {
             responseTokens: totalTokens.responseTokens + result.tokens.responseTokens,
             totalTokens: totalTokens.totalTokens + result.tokens.totalTokens,
           };
+        } else {
+          // Check if we hit the limit mid-loop
+          const err = getLastApiError();
+          if (err?.message.startsWith('LIMIT_EXCEEDED:')) {
+            setShowUpgradeModal(true);
+            refreshUsage();
+            break;
+          }
         }
       }
 
@@ -508,6 +532,7 @@ export default function App() {
           apiSplitTokens: totalTokens
         } : s));
         console.log(`[Gemini] SUCCESS — enhanced ${enhancedMap.size} turns, tokens: ${totalTokens.promptTokens} in + ${totalTokens.responseTokens} out = ${totalTokens.totalTokens} total`);
+        if (!hasApiKey()) refreshUsage();
       }
     } catch (err) {
       console.error('[Flow] Enhancement failed:', err);
@@ -516,7 +541,7 @@ export default function App() {
     } finally {
       setIsClassifying(false);
     }
-  }, [hasDirectMarkers, parsed.turns, apiFeatures, customInstructions]);
+  }, [hasDirectMarkers, parsed.turns, apiFeatures, customInstructions, isOverLimit, refreshUsage, activeSourceId]);
 
   const handleManualApiRetry = () => {
     if (hasDirectMarkers) {
@@ -539,7 +564,6 @@ export default function App() {
         parsed.llm === 'Claude' ? 'Claude' : 'Other LLM';
   const selectedLLM = detectedLLM;
 
-  // Smart filename: LLM + first user question summary + date
   const exportFilename = useMemo(() => {
     const firstQ = currentTurns.find(t => t.role === 'user');
     const snippet = firstQ
@@ -555,12 +579,9 @@ export default function App() {
     setExporting(true);
     setIsPdfExporting(true);
     setPdfError(null);
-    // Wait for React to re-render with forceExpand=true on all TurnBlocks.
-    // Large documents need more time for the DOM to settle.
     const wordCount = (activeSource.content.match(/\S+/g) || []).length;
     const renderDelay = wordCount > 30000 ? 3000 : wordCount > 15000 ? 2000 : 800;
     await new Promise(r => setTimeout(r, renderDelay));
-    // Extra safety: wait for the browser to finish painting
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(undefined))));
     try {
       if (previewRef.current) {
@@ -645,6 +666,15 @@ export default function App() {
     e.target.value = '';
   }, [activeSourceId]);
 
+  // Handle checkout redirect result
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') === 'success') {
+      refreshUsage();
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [refreshUsage]);
+
   return (
     <div
       className="app-container"
@@ -665,12 +695,12 @@ export default function App() {
         </div>
 
         <div className="header-actions">
-          <div className={`split-method-badge no-print ${splitMethod !== 'none' ? 'active' : ''}`}>
+          <div className={`split-method-badge no-print desktop-only ${splitMethod !== 'none' ? 'active' : ''}`}>
             {splitMethod === 'regex' && t.regexMode}
             {splitMethod === 'gemini-api' && t.geminiApiMode}
-            {splitMethod === 'none' && (hasApiKey() ? t.readyMode : t.noApiKeyMode)}
+            {splitMethod === 'none' && (hasApiAccess ? t.readyMode : t.noApiKeyMode)}
           </div>
-          <div className="template-selector no-print">
+          <div className="template-selector no-print desktop-only">
             <button onClick={() => setPdfTemplate('professional')} className={`template-btn ${pdfTemplate === 'professional' ? 'active' : ''}`} data-tooltip={t.proTemplate} aria-label="Professional template"><Layout size={14} /></button>
             <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`} data-tooltip={t.academicTemplate} aria-label="Academic template"><GraduationCap size={14} /></button>
             <button onClick={() => setPdfTemplate('cyber')} className={`template-btn ${pdfTemplate === 'cyber' ? 'active' : ''}`} data-tooltip={t.cyberTemplate} aria-label="Cyber template"><Zap size={14} /></button>
@@ -681,14 +711,14 @@ export default function App() {
           <button onClick={toggleTheme} className="theme-toggle no-print" data-tooltip={theme === 'dark' ? t.switchToLightMode : t.switchToDarkMode} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print ${showConsole ? 'active' : ''}`} data-tooltip={t.apiConsole} aria-label="Toggle API console">
+          <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print desktop-only ${showConsole ? 'active' : ''}`} data-tooltip={t.apiConsole} aria-label="Toggle API console">
             <Terminal size={15} />
           </button>
-          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className={`btn btn-ghost no-print relative ${!hasApiKey() ? 'btn-attention' : ''}`} data-tooltip={t.settingsTooltip} aria-label="Open settings">
+          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className={`btn btn-ghost no-print relative ${!hasApiAccess ? 'btn-attention' : ''}`} data-tooltip={t.settingsTooltip} aria-label="Open settings">
             <Settings size={15} />
-            {!hasApiKey() && <span className="attention-dot" />}
+            {!hasApiAccess && <span className="attention-dot" />}
           </button>
-          <div className="export-dropdown no-print">
+          <div className="export-dropdown no-print desktop-only">
             <button className="btn btn-ghost" data-tooltip="Export Options" aria-label="Export Menu">
               <Download size={15} /> <ChevronDown size={12} style={{ marginLeft: 2, marginRight: -2, opacity: 0.6 }} />
             </button>
@@ -704,7 +734,7 @@ export default function App() {
               </button>
             </div>
           </div>
-          <button onClick={handleExportNotebookLM} className="btn btn-ghost no-print" data-tooltip={t.sendToNotebookLM} aria-label="Upload to NotebookLM">
+          <button onClick={handleExportNotebookLM} className="btn btn-ghost no-print desktop-only" data-tooltip={t.sendToNotebookLM} aria-label="Upload to NotebookLM">
             {isExportingNotebookLM ? <Check size={15} color="#10b981" /> : <BookOpen size={15} />}
           </button>
           <button onClick={handleExportPdf} disabled={exporting} className="btn btn-primary" data-tooltip={t.exportPdf} aria-label="Export PDF">
@@ -803,6 +833,34 @@ export default function App() {
             >
               {apiFeatures.has('latex') ? <Check size={10} strokeWidth={3} /> : <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontWeight: 700 }}>x</span>} {t.latex}
             </button>
+
+            {/* Usage counter for authenticated free-tier users */}
+            {user && !hasApiKey() && plan === 'free' && (
+              <div className="usage-counter no-print" style={{
+                marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+                fontSize: '0.7rem', color: isOverLimit ? '#dc2626' : 'var(--text-tertiary)',
+                fontWeight: isOverLimit ? 700 : 400,
+              }}>
+                <span>{callsUsed}/{FREE_CALL_LIMIT} calls</span>
+                {isOverLimit
+                  ? <button className="btn btn-primary" style={{ fontSize: '0.65rem', padding: '2px 8px', gap: 4 }} onClick={() => setShowUpgradeModal(true)}>
+                    <Crown size={10} /> Upgrade
+                  </button>
+                  : <span style={{ opacity: 0.7 }}>· {(wordsUsed / 1000).toFixed(0)}k/{FREE_WORD_LIMIT / 1000}k words</span>
+                }
+              </div>
+            )}
+
+            {/* Sign in prompt for unauthenticated users without own key */}
+            {!hasApiAccess && (
+              <button
+                className="btn btn-ghost no-print"
+                style={{ marginLeft: 'auto', fontSize: '0.7rem', gap: 4, color: 'var(--color-primary-500)' }}
+                onClick={() => setShowAuthModal(true)}
+              >
+                <LogIn size={11} /> Sign in for AI
+              </button>
+            )}
           </div>
           <textarea
             className="editor-textarea"
@@ -839,14 +897,14 @@ export default function App() {
                     ? 'auth'
                     : apiError.includes('Network') || apiError.includes('connect')
                       ? 'network'
-                      : apiError.includes('No API key') || apiError.includes('configured')
+                      : apiError.includes('No API key') || apiError.includes('configured') || apiError.includes('Sign in')
                         ? 'no-key'
                         : 'generic';
                 const labels: Record<string, { title: string; cls: string }> = {
                   'rate-limit': { title: 'Rate Limit', cls: 'api-error-banner--rate-limit' },
                   'auth': { title: 'Auth Error', cls: 'api-error-banner--auth' },
                   'network': { title: 'Network Error', cls: 'api-error-banner--network' },
-                  'no-key': { title: 'No API Key', cls: 'api-error-banner--no-key' },
+                  'no-key': { title: 'Sign in Required', cls: 'api-error-banner--no-key' },
                   'generic': { title: 'API Error', cls: '' },
                 };
                 const { title, cls } = labels[errType];
@@ -855,11 +913,18 @@ export default function App() {
                     <span className="api-error-icon">!</span>
                     <div className="api-error-body">
                       <strong>{title}</strong>
-                      <span>{apiError}</span>
+                      <span>{apiError.replace('LIMIT_EXCEEDED: ', '')}</span>
                     </div>
-                    <button className="api-error-dismiss" onClick={() => setApiError(null)}>
-                      <X size={14} />
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {!hasApiKey() && !user && (
+                        <button className="btn btn-primary" style={{ fontSize: '0.7rem', padding: '3px 10px' }} onClick={() => setShowAuthModal(true)}>
+                          <LogIn size={11} /> Sign in
+                        </button>
+                      )}
+                      <button className="api-error-dismiss" onClick={() => setApiError(null)}>
+                        <X size={14} />
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
@@ -1046,20 +1111,40 @@ export default function App() {
               <button className="btn-close" onClick={() => setShowSettings(false)} aria-label="Close settings"><X size={18} /></button>
             </div>
             <div className="settings-body">
+
+              {/* Account section */}
               <div className="setting-group" style={{ marginBottom: '20px' }}>
-                <label>{t.settingsEnterPassword}</label>
-                <div className="api-key-input-wrapper">
-                  <input
-                    type="password"
-                    value={apiPassword}
-                    onChange={(e) => setApiPassword(e.target.value)}
-                    onBlur={() => commitApiPassword(apiPassword)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') commitApiPassword(apiPassword); }}
-                    placeholder="Enter password..."
-                    aria-label="API Password"
-                  />
-                  {apiPassword === 'kenseiyasue123' && <div className="api-badge" style={{ background: '#10b981', color: '#fff' }}>Unlocked</div>}
-                </div>
+                <label>Account</label>
+                {user ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {user.email}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        {plan === 'pro'
+                          ? <><Crown size={11} style={{ color: '#f59e0b' }} /> Pro plan</>
+                          : <><span>{callsUsed}/{FREE_CALL_LIMIT} calls used</span> · <span>{(wordsUsed / 1000).toFixed(0)}k/{FREE_WORD_LIMIT / 1000}k words</span></>
+                        }
+                      </div>
+                    </div>
+                    {plan === 'free' && !hasApiKey() && (
+                      <button className="btn btn-primary" style={{ fontSize: '0.75rem', padding: '4px 10px', gap: 4 }} onClick={() => { setShowSettings(false); setShowUpgradeModal(true); }}>
+                        <Crown size={12} /> Upgrade
+                      </button>
+                    )}
+                    <button className="btn btn-ghost" style={{ fontSize: '0.75rem', gap: 4 }} onClick={async () => { await signOut(); setShowSettings(false); }}>
+                      <LogOut size={13} /> Sign out
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="setting-hint" style={{ marginBottom: 8 }}>Sign in for 15 free AI-powered calls per month.</p>
+                    <button className="btn btn-primary" style={{ gap: 6 }} onClick={() => { setShowSettings(false); setShowAuthModal(true); }}>
+                      <LogIn size={14} /> Sign In / Create Account
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="setting-group">
@@ -1073,15 +1158,15 @@ export default function App() {
                     onKeyDown={(e) => { if (e.key === 'Enter') commitApiKey(apiKeyDraft); }}
                     placeholder="AIza..."
                     aria-label="Google AI API Key"
-                    disabled={apiPassword === 'kenseiyasue123'}
                   />
                   <div className="api-badge google-badge">gemini-2.5-flash</div>
                 </div>
                 <p className="setting-hint">
                   {t.settingsHint}
                   {t.getFreeKey} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary-500)' }}>Google AI Studio</a>.
+                  Entering your own key gives you unlimited usage.
                 </p>
-                {(hasApiKey() || apiPassword === 'kenseiyasue123') && (
+                {hasApiKey() && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
                     <button
                       className="btn btn-ghost"
@@ -1109,10 +1194,27 @@ export default function App() {
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-primary" onClick={() => { commitApiKey(apiKeyDraft); commitApiPassword(apiPassword); setShowSettings(false); }}>{t.done}</button>
+              <button className="btn btn-primary" onClick={() => { commitApiKey(apiKeyDraft); setShowSettings(false); }}>{t.done}</button>
             </div>
           </div>
         </div>
+      )}
+
+      {showAuthModal && (
+        <AuthModal
+          onClose={() => setShowAuthModal(false)}
+          onSignInWithGoogle={signInWithGoogle}
+          onSignInWithEmail={signInWithEmail}
+          onSignUp={signUp}
+        />
+      )}
+
+      {showUpgradeModal && (
+        <UpgradeModal
+          onClose={() => setShowUpgradeModal(false)}
+          callsUsed={callsUsed}
+          wordsUsed={wordsUsed}
+        />
       )}
     </div>
   );

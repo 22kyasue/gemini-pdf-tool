@@ -1648,6 +1648,11 @@ body,
   .header-stats {
     display: none;
   }
+
+  /* Push actions to the right once header-stats is hidden */
+  .header-actions {
+    margin-left: auto;
+  }
 }
 
 /* ════════════════════════════════════
@@ -1733,6 +1738,42 @@ body,
 
   .header-actions {
     gap: 4px;
+  }
+
+  /* Hide non-essential header items on mobile */
+  .desktop-only {
+    display: none !important;
+  }
+
+  /* Touch-friendly tap targets (min 44px per Apple/Google HIG) */
+  .btn,
+  .theme-toggle {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Prevent iOS Safari from zooming in on textarea focus */
+  .editor-textarea {
+    font-size: 16px;
+  }
+
+  /* API feature chips: horizontal scroll instead of overflow */
+  .api-features {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 10px;
+  }
+
+  .api-features::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Tighter textarea margin on mobile */
+  .editor-textarea {
+    margin: 8px 12px 12px 12px;
+    padding: 16px;
   }
 }
 
@@ -4485,6 +4526,24 @@ table {
 @media (max-width: 768px) {
   .mobile-hidden-sidebar {
     display: none !important;
+  }
+}
+
+/* ════════════════════════════════════
+   MOBILE MODAL — slide up from bottom
+   ════════════════════════════════════ */
+@media (max-width: 600px) {
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-content {
+    max-width: 100%;
+    width: 100%;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 90vh;
+    overflow-y: auto;
   }
 }
 

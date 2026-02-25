@@ -1,3 +1,16 @@
+/// <reference types="vite/client" />
+
+interface ImportMetaEnv {
+  readonly VITE_SUPABASE_URL: string;
+  readonly VITE_SUPABASE_ANON_KEY: string;
+  readonly VITE_STRIPE_PRICE_ID: string;
+  // VITE_GOOGLE_API_KEY intentionally removed — key is now in Supabase secrets
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 declare module 'html2pdf.js' {
     interface Html2PdfOptions {
         margin?: number | number[];

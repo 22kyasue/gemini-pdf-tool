@@ -22,7 +22,8 @@
       "Bash(python3:*)",
       "Bash(cat:*)",
       "Bash(tasklist 2>/dev/null | grep -i node | head -20 || ps aux | grep node | head -20)",
-      "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm run lint 2>&1)"
+      "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm run lint 2>&1)",
+      "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm install @supabase/supabase-js 2>&1)"
     ]
   }
 }
