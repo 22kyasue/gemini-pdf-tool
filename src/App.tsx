@@ -714,6 +714,26 @@ export default function App() {
           <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print desktop-only ${showConsole ? 'active' : ''}`} data-tooltip={t.apiConsole} aria-label="Toggle API console">
             <Terminal size={15} />
           </button>
+          {/* User avatar / sign-in button */}
+          {user ? (
+            <button
+              className="user-avatar no-print"
+              onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }}
+              data-tooltip={user.email ?? 'Account'}
+              aria-label="Account settings"
+            >
+              {(user.email?.[0] ?? 'U').toUpperCase()}
+            </button>
+          ) : (
+            <button
+              className="btn btn-ghost no-print"
+              style={{ fontSize: '0.8rem', gap: 5, fontWeight: 600 }}
+              onClick={() => setShowAuthModal(true)}
+              aria-label="Sign in"
+            >
+              <LogIn size={14} /> Sign in
+            </button>
+          )}
           <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className={`btn btn-ghost no-print relative ${!hasApiAccess ? 'btn-attention' : ''}`} data-tooltip={t.settingsTooltip} aria-label="Open settings">
             <Settings size={15} />
             {!hasApiAccess && <span className="attention-dot" />}
