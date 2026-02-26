@@ -199,7 +199,7 @@ async function callGeminiProxy(body: ProxyRequestBody): Promise<GeminiResult | n
             body: JSON.stringify(body),
         });
 
-        const data: ProxyResponse = await res.json();
+        const data: ProxyResponse = await res.json().catch(() => ({} as ProxyResponse));
 
         if (!res.ok) {
             if (data.error === 'limit_exceeded') {
