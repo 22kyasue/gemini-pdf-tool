@@ -79,8 +79,8 @@ export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSi
                 <h2 className="auth-brand-title">{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2>
                 <p className="auth-brand-sub">
                   {mode === 'signin'
-                    ? 'Sign in to access AI-powered chat formatting'
-                    : 'Get 15 free AI calls per month, no credit card needed'}
+                    ? 'Sign in to export your AI chats to PDF'
+                    : 'Get 15 free exports per month, no credit card needed'}
                 </p>
               </div>
             </div>

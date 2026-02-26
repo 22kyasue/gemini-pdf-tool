@@ -4,7 +4,7 @@ type Lang = 'en' | 'ja';
 
 const translations = {
     en: {
-        appTitle: 'GEMINI PDF TOOL',
+        appTitle: 'CHATSOURCE',
         sources: 'SOURCES',
         editor: 'EDITOR',
         preview: 'PREVIEW',
@@ -60,7 +60,7 @@ const translations = {
         noApiKeyMode: 'No API Key',
     },
     ja: {
-        appTitle: 'GEMINI PDF ツール',
+        appTitle: 'CHATSOURCE',
         sources: 'ソース',
         editor: 'エディター',
         preview: 'プレビュー',
