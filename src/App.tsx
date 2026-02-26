@@ -456,17 +456,9 @@ export default function App() {
   const splitMethod = hasDirectMarkers ? 'regex' : (overrideTurns ? 'gemini-api' : 'none');
 
   // ── Gemini-marker chats: user-triggered enhance for code/latex ──
-  const [enhanceDismissed, setEnhanceDismissed] = useState(false);
   const enhanceCancelledRef = useRef(false);
 
-  useEffect(() => {
-    setEnhanceDismissed(false);
-  }, [sourceContents]);
-
   const hasAnyEnhanceFeature = apiFeatures.has('format') || apiFeatures.has('tables') || apiFeatures.has('code') || apiFeatures.has('latex');
-  const showEnhancePrompt = hasDirectMarkers && hasApiAccess && !overrideTurns && !isClassifying && !enhanceDismissed
-    && hasAnyEnhanceFeature
-    && parsed.turns.some(t => t.role === 'assistant');
 
   const handleEnhanceGemini = useCallback(async () => {
     if (!hasDirectMarkers || parsed.turns.length === 0) return;
@@ -1046,6 +1038,23 @@ export default function App() {
                     </div>
                     <div className="empty-state-text">No turns detected</div>
                     <div className="empty-state-hint">Paste a chat log in the editor or drop a .txt file</div>
+                  </div>
+                </div>
+              ) : !isClassifying ? (
+                <div className="messages-list">
+                  <div className="welcome-state no-print">
+                    <div className="welcome-icon">
+                      <FileText size={28} />
+                    </div>
+                    <h3 className="welcome-title">Format your AI chat for PDF</h3>
+                    <p className="welcome-sub">Paste a conversation from Gemini, ChatGPT, or Claude in the editor on the left</p>
+                    <div className="welcome-features">
+                      <span className="welcome-feature"><Zap size={12} /> AI formatting</span>
+                      <span className="welcome-feature"><Download size={12} /> PDF export</span>
+                      <span className="welcome-feature"><Table size={12} /> Table support</span>
+                      <span className="welcome-feature"><GraduationCap size={12} /> LaTeX / KaTeX</span>
+                    </div>
+                    <p className="welcome-cta">Or drop a <kbd>.txt</kbd> file anywhere on the page</p>
                   </div>
                 </div>
               ) : null}
