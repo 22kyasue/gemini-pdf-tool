@@ -31,9 +31,18 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
+    // Verify JWT by calling Supabase auth REST endpoint directly
+    const userRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/auth/v1/user`, {
+      headers: {
+        Authorization: authHeader,
+        apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      },
+    });
+    if (!userRes.ok) {
+      return json({ error: 'Invalid or expired token' }, 401);
+    }
+    const user = await userRes.json() as { id: string; email?: string };
+    if (!user?.id) {
       return json({ error: 'Invalid or expired token' }, 401);
     }
 

@@ -194,6 +194,7 @@ async function callGeminiProxy(body: ProxyRequestBody): Promise<GeminiResult | n
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${_supabaseSession.access_token}`,
+                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY as string,
             },
             body: JSON.stringify(body),
         });
