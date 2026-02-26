@@ -851,6 +851,17 @@ export default function App() {
               </div>
             )}
 
+            {/* Enhance button for direct-marker chats */}
+            {hasDirectMarkers && hasApiAccess && !overrideTurns && !isClassifying && hasAnyEnhanceFeature && (
+              <button
+                className="btn btn-ghost no-print"
+                style={{ marginLeft: 'auto', fontSize: '0.7rem', gap: 4, color: 'var(--color-primary-500)', fontWeight: 600 }}
+                onClick={handleEnhanceGemini}
+              >
+                <Sparkles size={11} /> Enhance formatting
+              </button>
+            )}
+
             {/* Sign in prompt for unauthenticated users without own key */}
             {!hasApiAccess && (
               <button
@@ -960,65 +971,31 @@ export default function App() {
                 </div>
               )}
 
-              {showEnhancePrompt && (
-                <div className="enhance-card no-print">
-                  <button className="enhance-card-dismiss" onClick={() => setEnhanceDismissed(true)}><X size={14} /></button>
-                  <div className="enhance-card-icon"><Sparkles size={20} /></div>
-                  <div className="enhance-card-title">{t.enhanceCardTitle}</div>
-                  <div className="enhance-card-desc">{t.enhanceCardDesc}</div>
-                  <div className="enhance-card-features">
-                    {(['format', 'tables', 'code', 'latex'] as ApiFeature[]).map(f => {
-                      const labels: Record<string, { name: string; hint: string }> = {
-                        format: { name: t.formatting, hint: 'Bold, lists, headings' },
-                        tables: { name: t.tables, hint: 'Reconstruct pipe tables' },
-                        code: { name: t.code, hint: 'Re-fence with language' },
-                        latex: { name: t.latex, hint: 'Restore math delimiters' },
-                      };
-                      const { name, hint } = labels[f];
-                      return (
-                        <button
-                          key={f}
-                          className={`enhance-feature-chip ${apiFeatures.has(f) ? 'active' : ''}`}
-                          onClick={() => toggleFeature(f)}
-                        >
-                          <span className="enhance-feature-check">{apiFeatures.has(f) ? <Check size={10} strokeWidth={3} /> : null}</span>
-                          <span className="enhance-feature-name">{name}</span>
-                          <span className="enhance-feature-hint">{hint}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="sync-retry-row">
-                    <input
-                      type="text"
-                      placeholder={t.customInstructionsEnhance}
-                      value={customInstructions}
-                      onChange={e => setCustomInstructions(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleEnhanceGemini(); }}
-                      className="instruction-input"
-                    />
-                    <button className="enhance-card-btn" onClick={handleEnhanceGemini} disabled={!hasAnyEnhanceFeature}>
-                      <Sparkles size={14} /> {t.enhanceBtnPrefix} {parsed.turns.filter(t => t.role === 'assistant').length} {parsed.turns.filter(t => t.role === 'assistant').length !== 1 ? t.responsesSuffix : t.responseSuffix}
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {!isClassifying && !apiError && overrideTurns && hasDirectMarkers && (
-                <div className="ai-success-banner no-print" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                <div className="ai-success-banner no-print" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                     <Sparkles size={14} />
-                    <span>{t.aiEnhancementApplied}</span>
+                    <span style={{ fontWeight: 700 }}>{t.aiEnhancementApplied}</span>
                     {tokenUsage && (
-                      <span className="token-usage">
-                        ({tokenUsage.promptTokens.toLocaleString()} in + {tokenUsage.responseTokens.toLocaleString()} out = {tokenUsage.totalTokens.toLocaleString()} tokens)
+                      <span className="token-usage" style={{ marginLeft: 0 }}>
+                        {tokenUsage.promptTokens.toLocaleString()} in · {tokenUsage.responseTokens.toLocaleString()} out · {tokenUsage.totalTokens.toLocaleString()} tokens
                       </span>
                     )}
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                      {(['format', 'tables', 'code', 'latex'] as ApiFeature[]).filter(f => apiFeatures.has(f)).map(f => (
+                        <span key={f} style={{
+                          fontSize: '0.65rem', fontWeight: 600, padding: '2px 7px',
+                          background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)',
+                          borderRadius: 99, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.04em',
+                        }}>{f}</span>
+                      ))}
+                    </div>
                   </div>
-                  <div className="sync-retry-row">
+                  <div className="sync-retry-row" style={{ marginTop: 0 }}>
                     <input
                       type="text"
-                      placeholder={t.whatWasIssue}
+                      placeholder="Describe an issue to re-enhance (e.g. 'fix the table formatting')..."
                       value={customInstructions}
                       onChange={e => setCustomInstructions(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') handleManualApiRetry(); }}
@@ -1027,9 +1004,9 @@ export default function App() {
                     <button
                       className="sync-banner-btn"
                       onClick={handleManualApiRetry}
-                      title="Enhance formatting with AI"
+                      title="Re-enhance with AI"
                     >
-                      <RefreshCcw size={14} /> {t.enhanceApi}
+                      <RefreshCcw size={13} /> Re-enhance
                     </button>
                   </div>
                 </div>
