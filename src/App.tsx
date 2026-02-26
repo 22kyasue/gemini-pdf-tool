@@ -974,15 +974,15 @@ export default function App() {
 
               {!isClassifying && !apiError && overrideTurns && hasDirectMarkers && (
                 <div className="ai-success-banner no-print" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: '12px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <Sparkles size={14} />
-                    <span style={{ fontWeight: 700 }}>{t.aiEnhancementApplied}</span>
+                  <div className="ai-success-banner-header">
+                    <Sparkles size={14} style={{ flexShrink: 0 }} />
+                    <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{t.aiEnhancementApplied}</span>
                     {tokenUsage && (
-                      <span className="token-usage" style={{ marginLeft: 0 }}>
-                        {tokenUsage.promptTokens.toLocaleString()} in · {tokenUsage.responseTokens.toLocaleString()} out · {tokenUsage.totalTokens.toLocaleString()} tokens
+                      <span className="token-usage">
+                        {tokenUsage.promptTokens.toLocaleString()} in · {tokenUsage.responseTokens.toLocaleString()} out · {tokenUsage.totalTokens.toLocaleString()} tok
                       </span>
                     )}
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                    <div className="ai-success-banner-chips">
                       {(['format', 'tables', 'code', 'latex'] as ApiFeature[]).filter(f => apiFeatures.has(f)).map(f => (
                         <span key={f} style={{
                           fontSize: '0.65rem', fontWeight: 600, padding: '2px 7px',
