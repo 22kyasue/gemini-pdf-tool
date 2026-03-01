@@ -5547,8 +5547,7 @@ table {
 }
 
 [data-theme="dark"] .preview-page {
-  background: #ffffff !important;
-  color: #1e293b !important;
+  background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.1);
 }
 
