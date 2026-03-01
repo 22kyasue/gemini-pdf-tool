@@ -2,8 +2,8 @@
 // BACKGROUND SERVICE WORKER (Manifest V3)
 //
 // Responsibilities:
-//   1. Open the Chrome side panel when the extension icon is clicked
-//   2. Show "ON" badge when the active tab is a supported site
+//   1. Show "ON" badge when the active tab is a supported site
+//   2. Toggle the floating button via extension icon click
 // ══════════════════════════════════════════════════════════
 
 const SUPPORTED_ORIGINS = ['gemini.google.com', 'chatgpt.com'];
@@ -24,10 +24,10 @@ function updateBadge(tabId: number, url: string | undefined) {
   chrome.action.setBadgeBackgroundColor({ color: '#6366f1', tabId });
 }
 
-// Open the side panel when the user clicks the extension icon
+// Toggle floating button when user clicks the extension icon
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id != null) {
-    chrome.sidePanel.open({ tabId: tab.id });
+    chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_BUTTON' });
   }
 });
 

@@ -1,6 +1,5 @@
 import type { ShareTurn } from '../utils/shareImport';
 import { ContentRenderer } from './ContentRenderer';
-import { FileText, Globe, Calendar, List, User, Bot } from 'lucide-react';
 
 interface SharePdfDocumentProps {
   title: string;
@@ -18,62 +17,32 @@ interface SharePdfDocumentProps {
  * would otherwise exceed the 14,000px canvas limit.
  */
 export function SharePdfDocument({ title, turns, platform, sourceUrl }: SharePdfDocumentProps) {
-  const dateStr = new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const dateStr = new Date().toLocaleDateString('en-CA'); // ISO: YYYY-MM-DD
 
   return (
     <>
-      {/* ─── CHATSOURCE Branding Header ─── */}
-      <div className="share-pdf-brand">
-        <div className="share-pdf-brand-top">
-          <div className="share-pdf-brand-left">
-            <FileText size={22} color="#4f46e5" />
-            <div>
-              <div className="share-pdf-brand-main">CHATSOURCE</div>
-              <div className="share-pdf-brand-sub">AI Chat Export</div>
-            </div>
-          </div>
-          <div className="share-pdf-brand-meta">
-            <div className="share-pdf-meta-item">
-              <Globe size={10} />
-              <span>Source: {platform}</span>
-            </div>
-            <div className="share-pdf-meta-item">
-              <Calendar size={10} />
-              <span>Exported: {dateStr}</span>
-            </div>
-          </div>
+      {/* ─── Simple header (matches ideal) ─── */}
+      <div className="share-pdf-top-header">
+        <div className="share-pdf-top-subtitle">
+          This is a copy of a conversation between {platform} &amp; Anonymous.
         </div>
-        <div className="share-pdf-brand-line" />
+        <div className="share-pdf-top-report">Report conversation</div>
       </div>
 
-      {/* ─── Document Title + Subtitle ─── */}
-      <div className="share-pdf-header">
-        <div className="share-pdf-title">{title}</div>
-        <div className="share-pdf-header-text">
-          This is a copy of a conversation between {platform} & Anonymous.
-        </div>
-        {sourceUrl && (
-          <div className="share-pdf-source">Source: {sourceUrl}</div>
-        )}
+      {/* ─── Date row with dashed line ─── */}
+      <div className="share-pdf-date-row">
+        <span className="share-pdf-date-text"><strong>Date:</strong> {dateStr}</span>
+        <div className="share-pdf-date-dashed" />
       </div>
 
-      {/* ─── Table of Contents (card style) ─── */}
+      {/* ─── Table of Contents ─── */}
       <div className="share-pdf-toc">
-        <div className="share-pdf-toc-header">
-          <List size={14} />
-          <span>Table of Contents</span>
-        </div>
+        <h2 className="share-pdf-toc-heading">Table of Contents</h2>
         <ol className="share-pdf-toc-list">
           {turns.map((turn, i) => {
             const isUser = turn.role === 'user';
-            const role = isUser ? 'You' : platform;
-            const preview = turn.content.slice(0, 60).replace(/\n/g, ' ');
+            const role = isUser ? 'You said' : `${platform} said`;
+            const preview = turn.content.slice(0, 55).replace(/\n/g, ' ');
             return (
               <li key={i} className="share-pdf-toc-item">
                 <span className="share-pdf-toc-num">{i + 1}.</span>
@@ -81,7 +50,7 @@ export function SharePdfDocument({ title, turns, platform, sourceUrl }: SharePdf
                   {role}:
                 </span>
                 <span className="share-pdf-toc-preview">
-                  {preview}{turn.content.length > 60 ? '...' : ''}
+                  {preview}{turn.content.length > 55 ? '...' : ''}
                 </span>
               </li>
             );
@@ -92,20 +61,33 @@ export function SharePdfDocument({ title, turns, platform, sourceUrl }: SharePdf
       {/* ─── Conversation turns — each is a direct child for chunking ─── */}
       {turns.map((turn, i) => {
         const isUser = turn.role === 'user';
+        const hasImage = turn.content.includes('Uploaded an image');
+
         return (
           <div
             className={`share-pdf-turn ${isUser ? 'share-turn-user' : 'share-turn-ai'}`}
             key={i}
           >
-            <div className={`share-pdf-label ${isUser ? 'share-label-user' : 'share-label-ai'}`}>
-              <span className={`share-pdf-pill ${isUser ? 'share-pill-user' : 'share-pill-ai'}`}>
-                {isUser ? <User size={11} /> : <Bot size={11} />}
-                {isUser ? 'USER' : platform.toUpperCase()}
-              </span>
-            </div>
-            <div className="share-pdf-content">
-              <ContentRenderer content={turn.content} />
-            </div>
+            {/* Dashed separator between turns */}
+            {i > 0 && isUser && <div className="share-pdf-turn-separator" />}
+
+            {isUser ? (
+              <div className="share-pdf-user-area">
+                {hasImage && (
+                  <div className="share-pdf-image-badge">
+                    <span className="share-pdf-image-icon">&#128444;</span>
+                    <span>Uploaded an image</span>
+                  </div>
+                )}
+                <div className="share-pdf-user-bubble">
+                  {turn.content.replace('Uploaded an image', '').trim()}
+                </div>
+              </div>
+            ) : (
+              <div className="share-pdf-ai-content">
+                <ContentRenderer content={turn.content} />
+              </div>
+            )}
           </div>
         );
       })}

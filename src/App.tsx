@@ -66,6 +66,7 @@ function generateMarkdown(turns: Turn[], llm: string): string {
 const LS_SOURCES = 'draft_sources';
 const LS_ACTIVE = 'draft_activeSourceId';
 const LS_TEMPLATE = 'draft_pdfTemplate';
+const LS_PDF_EXPORTS = 'pdf_export_count';
 
 // One-time cleanup: remove the old revoked API key from localStorage
 const OLD_REVOKED_KEY = 'AIzaSyBIOqIAjDuOJ-2pyJ2T6KDsmB7xCx13EhE';
@@ -131,7 +132,7 @@ export default function App() {
   }, []);
 
   // -- Auth & Usage --
-  const { user, isAnonymous, signInWithGoogle, signInWithEmail, signUp, signOut } = useAuth();
+  const { user, isAnonymous, signInWithGoogleIdToken, signInWithEmail, signUp, signOut } = useAuth();
   const { plan, callsUsed, wordsUsed, isOverLimit, daysUntilReset, refresh: refreshUsage } = useUsage(user, isAnonymous);
 
   // hasApiAccess: true if user has own key OR is signed in
@@ -146,6 +147,21 @@ export default function App() {
   const [shareBarInitialUrl, setShareBarInitialUrl] = useState('');
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const avatarMenuRef = useRef<HTMLDivElement>(null);
+
+  // -- Free PDF export counter (anonymous users) --
+  const [pdfExportCount, setPdfExportCount] = useState(() =>
+    parseInt(localStorage.getItem(LS_PDF_EXPORTS) || '0', 10)
+  );
+  useEffect(() => {
+    localStorage.setItem(LS_PDF_EXPORTS, String(pdfExportCount));
+  }, [pdfExportCount]);
+  // Reset counter when user signs in
+  useEffect(() => {
+    if (!isAnonymous && user) {
+      setPdfExportCount(0);
+      localStorage.removeItem(LS_PDF_EXPORTS);
+    }
+  }, [isAnonymous, user]);
 
   // Show upgrade modal immediately if limit is reached and no own key
   useEffect(() => {
@@ -174,6 +190,7 @@ export default function App() {
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportPhase, setExportPhase] = useState<'idle' | 'preparing' | 'rendering' | 'done'>('idle');
   const [showSettings, setShowSettings] = useState(false);
   const [settingsClosing, setSettingsClosing] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'account' | 'apikey'>('account');
@@ -746,22 +763,38 @@ export default function App() {
     return snippet ? `${llmTag} - ${snippet} (${date})` : `${llmTag} Chat (${date})`;
   }, [currentTurns, selectedLLM]);
 
+  const checkPdfLimit = (): boolean => {
+    if (!isAnonymous) return true;
+    if (pdfExportCount >= 3) {
+      setShowSignInPrompt(true);
+      return false;
+    }
+    return true;
+  };
+
   const handleExportPdf = async () => {
+    if (!checkPdfLimit()) return;
     setExporting(true);
     setIsPdfExporting(true);
+    setExportPhase('preparing');
     const wordCount = (activeSource.content.match(/\S+/g) || []).length;
     const renderDelay = wordCount > 30000 ? 3000 : wordCount > 15000 ? 2000 : 800;
     await new Promise(r => setTimeout(r, renderDelay));
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(undefined))));
     try {
+      setExportPhase('rendering');
       if (previewRef.current) {
         await exportToPdf(previewRef.current, exportFilename, scrollRef.current);
       }
+      setExportPhase('done');
+      if (isAnonymous) setPdfExportCount(c => c + 1);
+      await new Promise(r => setTimeout(r, 1200));
     } catch (err) {
       console.error('[Flow] PDF export failed:', err);
       toast('error', err instanceof Error ? err.message : 'PDF generation failed');
     } finally {
       setIsPdfExporting(false);
+      setExportPhase('idle');
       setExporting(false);
     }
   };
@@ -880,7 +913,7 @@ export default function App() {
         {showAuthModal && (
           <AuthModal
             onClose={() => setShowAuthModal(false)}
-            onSignInWithGoogle={signInWithGoogle}
+            onSignInWithGoogleIdToken={signInWithGoogleIdToken}
             onSignInWithEmail={signInWithEmail}
             onSignUp={signUp}
             t={t}
@@ -936,12 +969,14 @@ export default function App() {
             }
             navigateTo('editor');
           }}
+          onCheckPdfLimit={checkPdfLimit}
+          onPdfExported={() => { if (isAnonymous) setPdfExportCount(c => c + 1); }}
         />
         <ToastContainer />
         {showAuthModal && (
           <AuthModal
             onClose={() => setShowAuthModal(false)}
-            onSignInWithGoogle={signInWithGoogle}
+            onSignInWithGoogleIdToken={signInWithGoogleIdToken}
             onSignInWithEmail={signInWithEmail}
             onSignUp={signUp}
             t={t}
@@ -968,7 +1003,7 @@ export default function App() {
         <div className="header-actions">
           {/* Convert page link */}
           <div className="header-group">
-            <button onClick={() => navigateTo('convert')} className="btn btn-ghost no-print" style={{ fontSize: '0.8rem', gap: 5, fontWeight: 600 }} data-tooltip={t.convertToPdf || 'Convert to PDF'}>
+            <button onClick={() => navigateTo('convert')} className="btn btn-ghost no-print" style={{ fontSize: '0.8rem', gap: 5, fontWeight: 600 }}>
               <Link2 size={14} /> <span className="desktop-only">{t.convertToPdf || 'Convert'}</span>
             </button>
           </div>
@@ -1101,6 +1136,19 @@ export default function App() {
         </button>
       </div>
 
+      {(!user || isAnonymous) && (
+        <div className="fullscreen-auth-gate">
+          <div className="fullscreen-auth-gate-content">
+            <LogIn size={24} />
+            <h3>Sign in to continue</h3>
+            <p>Create a free account to use the editor</p>
+            <button className="btn btn-primary" onClick={() => setShowAuthModal(true)}>
+              Sign In / Create Account
+            </button>
+          </div>
+        </div>
+      )}
+
       <main className="app-main">
         <aside className="source-sidebar no-print mobile-hidden-sidebar">
           <div className="sidebar-header">
@@ -1165,10 +1213,12 @@ export default function App() {
                 setShowShareBar(false);
               }}
               onDirectPdf={async (title, turns, platform, sourceUrl) => {
+                if (!checkPdfLimit()) return;
                 setExporting(true);
                 toast('info', 'Generating PDF...', 3000);
                 try {
                   await exportSharePdf(title, turns, platform, sourceUrl);
+                  if (isAnonymous) setPdfExportCount(c => c + 1);
                   toast('success', 'PDF downloaded!', 3000);
                 } catch (err) {
                   console.error('[SharePDF]', err);
@@ -1495,12 +1545,37 @@ export default function App() {
         </div>
       )}
 
-      {/* PDF export spinner overlay */}
+      {/* PDF export overlay */}
       {exporting && (
-        <div className="pdf-spinner-overlay no-print" role="status" aria-live="assertive">
-          <div className="pdf-spinner-content">
-            <div className="pdf-spinner"></div>
-            <span>{t.generatingPdf}</span>
+        <div className={`pdf-export-overlay no-print${exportPhase === 'idle' ? ' pdf-overlay-exit' : ''}`} role="status" aria-live="assertive">
+          <div className={`pdf-export-card${exportPhase === 'done' ? ' pdf-export-done' : ''}`}>
+            {exportPhase === 'done' ? (
+              <>
+                <div className="pdf-success-icon"><Check size={28} strokeWidth={3} /></div>
+                <span className="pdf-export-label">PDF saved!</span>
+              </>
+            ) : (
+              <>
+                <div className="pdf-progress-ring">
+                  <svg viewBox="0 0 48 48">
+                    <circle className="pdf-ring-track" cx="24" cy="24" r="20" />
+                    <circle className="pdf-ring-fill" cx="24" cy="24" r="20"
+                      strokeDasharray={exportPhase === 'preparing' ? '25 126' : exportPhase === 'rendering' ? '95 126' : '126 126'}
+                    />
+                  </svg>
+                </div>
+                <span className="pdf-export-label">
+                  {exportPhase === 'preparing' ? (lang === 'ja' ? '\u6E96\u5099\u4E2D...' : 'Preparing...') : (lang === 'ja' ? '\u30EC\u30F3\u30C0\u30EA\u30F3\u30B0\u4E2D...' : 'Rendering PDF...')}
+                </span>
+                <div className="pdf-export-steps">
+                  <span className={`pdf-step${exportPhase === 'preparing' ? ' active' : ' done'}`}>Layout</span>
+                  <span className="pdf-step-dot" />
+                  <span className={`pdf-step${exportPhase === 'rendering' ? ' active' : ''}`}>Render</span>
+                  <span className="pdf-step-dot" />
+                  <span className="pdf-step">Save</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1713,7 +1788,7 @@ export default function App() {
       {showAuthModal && (
         <AuthModal
           onClose={() => setShowAuthModal(false)}
-          onSignInWithGoogle={signInWithGoogle}
+          onSignInWithGoogleIdToken={signInWithGoogleIdToken}
           onSignInWithEmail={signInWithEmail}
           onSignUp={signUp}
           t={t}

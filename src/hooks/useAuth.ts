@@ -9,7 +9,7 @@ export interface AuthState {
   session: Session | null;
   loading: boolean;
   isAnonymous: boolean;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogleIdToken: (idToken: string) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -54,14 +54,14 @@ export function useAuth(): AuthState {
 
   const appUrl = window.location.origin + import.meta.env.BASE_URL;
 
-  const signInWithGoogle = async () => {
-    // If there's an anonymous session, sign out first so OAuth can create a real user
+  const signInWithGoogleIdToken = async (idToken: string) => {
+    // If there's an anonymous session, sign out first so the real user is created
     if (user?.is_anonymous) {
       await supabase.auth.signOut();
     }
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithIdToken({
       provider: 'google',
-      options: { redirectTo: appUrl },
+      token: idToken,
     });
     if (error) throw error;
   };
@@ -87,5 +87,5 @@ export function useAuth(): AuthState {
 
   const isAnonymous = user?.is_anonymous ?? false;
 
-  return { user, session, loading, isAnonymous, signInWithGoogle, signInWithEmail, signUp, signOut };
+  return { user, session, loading, isAnonymous, signInWithGoogleIdToken, signInWithEmail, signUp, signOut };
 }

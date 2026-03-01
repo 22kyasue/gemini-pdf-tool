@@ -2,22 +2,35 @@
   "manifest_version": 3,
   "name": "Gemini PDF Tool",
   "version": "1.0.0",
-  "description": "Export Gemini/ChatGPT conversations to beautified PDFs directly from the page.",
-  "permissions": ["sidePanel", "storage", "activeTab", "scripting", "tabs"],
+  "description": "Export Gemini/ChatGPT conversations to PDF, Word, Markdown, JSON, or CSV.",
+  "permissions": ["storage", "activeTab"],
   "host_permissions": [
     "https://gemini.google.com/*",
-    "https://chatgpt.com/*"
+    "https://chatgpt.com/*",
+    "https://chatsource.app/*"
   ],
-  "side_panel": {
-    "default_path": "src/sidepanel/index.html"
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Open Gemini PDF Tool"
+    "default_title": "Toggle Export Button",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {
       "matches": ["https://gemini.google.com/*", "https://chatgpt.com/*"],
-      "js": ["src/content/index.ts"],
+      "js": ["src/content/index.tsx"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chatsource.app/*"],
+      "js": ["src/content/auth-bridge.ts"],
       "run_at": "document_idle"
     }
   ],

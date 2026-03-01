@@ -806,6 +806,8 @@ body,
   overflow: hidden;
   gap: 0;
   background: var(--bg-app);
+  position: relative;
+  z-index: 1;
 }
 
 .panel {
@@ -822,6 +824,46 @@ body,
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.04);
   position: relative;
   z-index: 10;
+}
+
+/* ── Fullscreen auth gate (covers editor + preview) ── */
+.fullscreen-auth-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 120px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.fullscreen-auth-gate-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+  text-align: center;
+  padding: 32px 40px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.fullscreen-auth-gate-content h3 {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.fullscreen-auth-gate-content p {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
 }
 
 .panel-right {
@@ -1873,6 +1915,72 @@ body,
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+
+  /* ─── Share PDF print mode (window.print) ─── */
+  body.share-pdf-printing > *:not(#share-pdf-print-overlay) {
+    display: none !important;
+  }
+
+  body.share-pdf-printing #share-pdf-print-overlay {
+    position: static !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    z-index: auto !important;
+  }
+
+  body.share-pdf-printing .share-pdf-doc {
+    max-width: 100% !important;
+  }
+
+  /* Page break rules for share PDF turns */
+  body.share-pdf-printing .share-pdf-turn {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  body.share-pdf-printing .share-pdf-user-bubble {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  body.share-pdf-printing .share-pdf-toc {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  body.share-pdf-printing .code-block-container {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  body.share-pdf-printing .mermaid-container {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  body.share-pdf-printing .smart-table-wrap {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  body.share-pdf-printing .content-render-pass h1,
+  body.share-pdf-printing .content-render-pass h2,
+  body.share-pdf-printing .content-render-pass h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  body.share-pdf-printing .content-render-pass li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  body.share-pdf-printing .content-render-pass blockquote {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
 
 /* ════════════════════════════════════
@@ -2465,6 +2573,10 @@ a:focus-visible {
   flex-shrink: 0;
 }
 
+[data-theme="dark"] .llm-selector {
+  background: rgba(15, 23, 42, 0.8);
+}
+
 .llm-detect-info {
   display: flex;
   align-items: center;
@@ -2532,6 +2644,11 @@ a:focus-visible {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
   flex-wrap: wrap;
+}
+
+[data-theme="dark"] .api-features {
+  background: rgba(15, 23, 42, 0.8);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 .api-features-label {
@@ -5551,40 +5668,45 @@ table {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* ── Dark mode glassmorphic panels ── */
+/* ── Dark mode panels — opaque dark backgrounds ── */
 [data-theme="dark"] .source-sidebar {
+  background: rgba(15, 23, 42, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  border-right-color: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .panel-left {
+  background: rgba(15, 23, 42, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  box-shadow: 2px 0 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 2px 0 20px rgba(0, 0, 0, 0.3);
+  border-right-color: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .panel-header {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .sidebar-header {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .editor-textarea {
-  background: rgba(0, 0, 0, 0.3);
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.04) 0.5px, transparent 0.5px);
-  background-size: 16px 16px;
-  color: #f1f5f9;
+  background: rgba(0, 0, 0, 0.4);
+  background-image: none;
+  color: #e2e8f0;
   border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 [data-theme="dark"] .editor-textarea:focus {
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.5);
   background-image: none;
   border-color: var(--color-primary-400);
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 [data-theme="dark"] .editor-textarea::placeholder {
@@ -5717,46 +5839,139 @@ table {
 }
 
 /* ════════════════════════════════════
-   PDF EXPORT SPINNER OVERLAY
+   PDF EXPORT OVERLAY (polished)
    ════════════════════════════════════ */
-.pdf-spinner-overlay {
+.pdf-export-overlay {
   position: fixed;
   inset: 0;
   z-index: 9998;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0);
+  backdrop-filter: blur(0);
+  animation: pdf-overlay-in 350ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-.pdf-spinner-content {
+.pdf-export-overlay.pdf-overlay-exit {
+  animation: pdf-overlay-out 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes pdf-overlay-in {
+  to { background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(6px); }
+}
+@keyframes pdf-overlay-out {
+  from { background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(6px); }
+  to   { background: rgba(0, 0, 0, 0);   backdrop-filter: blur(0); }
+}
+
+/* ── Card ── */
+.pdf-export-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 32px 48px;
+  gap: 18px;
+  padding: 36px 52px;
   background: var(--bg-primary);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-  font-size: 0.9rem;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255,255,255,0.06);
+  animation: pdf-card-in 400ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.pdf-export-card.pdf-export-done {
+  animation: pdf-card-done 400ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes pdf-card-in {
+  from { opacity: 0; transform: scale(0.85) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes pdf-card-done {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+/* ── Progress ring (SVG) ── */
+.pdf-progress-ring {
+  width: 48px;
+  height: 48px;
+}
+
+.pdf-progress-ring svg {
+  transform: rotate(-90deg);
+}
+
+.pdf-ring-track {
+  fill: none;
+  stroke: var(--border-primary, #334155);
+  stroke-width: 3;
+}
+
+.pdf-ring-fill {
+  fill: none;
+  stroke: var(--color-primary-500, #6366f1);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  transition: stroke-dasharray 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Label text ── */
+.pdf-export-label {
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.pdf-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid var(--border-primary);
-  border-top-color: var(--color-primary-500);
-  border-radius: 50%;
-  animation: pdfSpin 0.8s linear infinite;
+/* ── Step indicators ── */
+.pdf-export-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-@keyframes pdfSpin {
-  to {
-    transform: rotate(360deg);
-  }
+.pdf-step {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-slate-500, #64748b);
+  transition: color 300ms;
+}
+
+.pdf-step.active {
+  color: var(--color-primary-400, #818cf8);
+}
+
+.pdf-step.done {
+  color: var(--color-emerald-400, #34d399);
+}
+
+.pdf-step-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-slate-600, #475569);
+}
+
+/* ── Success icon ── */
+.pdf-success-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--color-emerald-500, #10b981);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pdf-check-pop 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes pdf-check-pop {
+  from { opacity: 0; transform: scale(0); }
+  60%  { opacity: 1; transform: scale(1.15); }
+  to   { transform: scale(1); }
 }
 
 /* ════════════════════════════════════
@@ -5840,6 +6055,48 @@ table {
   border-bottom: 1px solid var(--border-primary);
   border-left: 3px solid var(--color-primary-400);
   animation: share-bar-slide-down 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="dark"] .share-link-bar {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+  border-left-color: var(--color-primary-500);
+}
+
+[data-theme="dark"] .share-link-bar input {
+  background: rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #f1f5f9;
+}
+
+[data-theme="dark"] .share-link-bar input:focus {
+  background: rgba(0, 0, 0, 0.5);
+  border-color: var(--color-primary-400);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+[data-theme="dark"] .share-link-bar input::placeholder {
+  color: #64748b;
+}
+
+[data-theme="dark"] .share-link-bar .share-load-btn {
+  background: var(--color-primary-500);
+  color: #fff;
+}
+
+[data-theme="dark"] .share-link-bar .share-load-btn:hover:not(:disabled) {
+  background: var(--color-primary-400);
+}
+
+[data-theme="dark"] .share-link-bar .share-close-btn {
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .share-link-bar .share-close-btn:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 @keyframes share-bar-slide-down {
@@ -6068,8 +6325,8 @@ table {
   top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  background: var(--text-primary);
-  color: var(--bg-surface);
+  background: #1e293b;
+  color: #f1f5f9;
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 0.75rem;
@@ -6081,6 +6338,12 @@ table {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 9999;
   box-shadow: var(--shadow-md);
+}
+
+[data-theme="dark"] [data-tooltip]::after {
+  background: #e2e8f0;
+  color: #0f172a;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 [data-tooltip]:hover::after {
@@ -6162,8 +6425,12 @@ table {
 
 /* ════════════════════════════════════
    SHARE PDF DOCUMENT
-   Matches the normal copy-paste pipeline's visual design:
-   CHATSOURCE branding header, card-style TOC, turn blocks with role pills.
+   Clean, spacious layout matching the chat2doc.net ideal:
+   - Simple centered header
+   - Right-aligned user bubbles
+   - Large headings in AI responses
+   - Light code blocks
+   - Generous spacing
 
    ARCHITECTURE NOTE: The container div gets class "share-pdf-doc".
    SharePdfDocument renders a fragment, so header/TOC/turns are DIRECT
@@ -6171,139 +6438,93 @@ table {
    turns for long conversations. Each section carries its own horizontal
    padding because exportToPdf zeroes container padding in chunks.
    ════════════════════════════════════ */
+
+/* ─── Print overlay (visible on screen while print dialog is open) ─── */
+#share-pdf-print-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: #fff;
+  overflow: auto;
+  padding: 40px 20px;
+}
+
+#share-pdf-print-overlay .share-pdf-doc {
+  max-width: 794px;
+  margin: 0 auto;
+}
 .share-pdf-doc {
   background: #fff;
   color: #1e293b;
   font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 14px;
+  line-height: 1.75;
   max-width: 794px;
 }
 
-/* ── CHATSOURCE Branding Header ──
-   Matches PdfPrintHeader: logo, source/export meta, indigo divider */
-.share-pdf-brand {
-  padding: 32px 36px 24px;
-}
-
-.share-pdf-brand-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding-bottom: 10px;
-}
-
-.share-pdf-brand-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.share-pdf-brand-main {
-  font-size: 16pt;
-  font-weight: 900;
-  color: #1e293b;
-  letter-spacing: 0.05em;
-  line-height: 1;
-}
-
-.share-pdf-brand-sub {
-  font-size: 8pt;
-  color: #64748b;
-  text-transform: uppercase;
-  font-weight: 600;
-  margin-top: 1px;
-}
-
-.share-pdf-brand-meta {
-  text-align: right;
-}
-
-.share-pdf-meta-item {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  font-size: 8.5pt;
-  color: #475569;
-  font-weight: 500;
-  line-height: 1.8;
-}
-
-.share-pdf-brand-line {
-  height: 2pt;
-  background: #4f46e5;
-  border-radius: 999px;
-}
-
-/* ── Document Title + Subtitle ── */
-.share-pdf-header {
+/* ── Simple top header (centered subtitle + report link) ── */
+.share-pdf-top-header {
   text-align: center;
-  padding: 28px 36px 24px;
+  padding: 36px 48px 16px;
 }
 
-.share-pdf-title {
-  font-size: 22px;
-  font-weight: 800;
-  color: #0f172a;
-  margin-bottom: 8px;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
+.share-pdf-top-subtitle {
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
 }
 
-.share-pdf-header-text {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.share-pdf-source {
+.share-pdf-top-report {
   font-size: 10px;
-  color: #94a3b8;
-  margin-top: 6px;
-  word-break: break-all;
-  line-height: 1.4;
+  color: #6366f1;
+  margin-top: 2px;
 }
 
-/* ── Table of Contents (card style matching .toc-block) ── */
+/* ── Date row with dashed underline ── */
+.share-pdf-date-row {
+  padding: 16px 48px 12px;
+}
+
+.share-pdf-date-text {
+  font-size: 13px;
+  color: #374151;
+}
+
+.share-pdf-date-dashed {
+  border-bottom: 1.5px dashed #cbd5e1;
+  margin-top: 12px;
+}
+
+/* ── Table of Contents ── */
 .share-pdf-toc {
-  padding: 8px 36px 28px;
+  padding: 16px 48px 28px;
 }
 
-.share-pdf-toc-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.72rem;
+.share-pdf-toc-heading {
+  font-size: 1.6rem;
   font-weight: 700;
-  color: #4338ca;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid #c7d2fe;
-}
-
-.share-pdf-toc-header svg {
-  opacity: 0.8;
+  color: #111827;
+  margin: 0 0 16px;
+  line-height: 1.3;
 }
 
 .share-pdf-toc-list {
   list-style: none;
   padding: 0;
   margin: 0;
-  background: linear-gradient(135deg, #faf9ff 0%, #eef2ff 100%);
-  border: 1px solid #e0e7ff;
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.08);
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   overflow: hidden;
 }
 
 .share-pdf-toc-item {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 7px 20px;
-  font-size: 0.8rem;
-  color: #4f46e5;
+  gap: 6px;
+  padding: 6px 20px;
+  font-size: 0.82rem;
+  color: #374151;
 }
 
 .share-pdf-toc-item:first-child {
@@ -6315,34 +6536,40 @@ table {
 }
 
 .share-pdf-toc-num {
-  font-weight: 700;
-  color: #6366f1;
-  min-width: 20px;
-  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b7280;
+  min-width: 18px;
+  font-size: 0.78rem;
 }
 
 .share-pdf-toc-role {
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
 .toc-role-user {
-  color: #475569;
+  color: #374151;
 }
 
 .toc-role-ai {
-  color: #4f46e5;
+  color: #374151;
 }
 
 .share-pdf-toc-preview {
-  color: #64748b;
+  color: #6b7280;
   font-weight: 400;
   font-size: 0.78rem;
 }
 
-/* ── Conversation Turns (card style matching .turn-block) ── */
+/* ── Dashed separator between turn pairs ── */
+.share-pdf-turn-separator {
+  border-bottom: 1.5px dashed #d1d5db;
+  margin: 8px 0 20px;
+}
+
+/* ── Conversation Turns ── */
 .share-pdf-turn {
-  padding: 0 36px 20px;
+  padding: 0 48px 12px;
   margin-bottom: 0;
 }
 
@@ -6350,124 +6577,103 @@ table {
   padding-bottom: 0;
 }
 
-/* Turn card container */
+/* Turn containers — no card borders */
 .share-turn-user,
 .share-turn-ai {
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: none;
+  box-shadow: none;
+  background: transparent;
 }
 
-.share-turn-user {
-  border-left: 3px solid #cbd5e1;
-  background: #fff;
+/* ── User message: right-aligned bubble ── */
+.share-pdf-user-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 16px 0 8px;
 }
 
-.share-turn-ai {
-  border-left: 4px solid #6366f1;
-  background: linear-gradient(135deg, #fff 0%, rgba(99, 102, 241, 0.02) 100%);
-}
-
-/* Role label bar (matches .turn-label) */
-.share-pdf-label {
+.share-pdf-image-badge {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 20px;
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-bottom: 6px;
 }
 
-.share-label-user {
-  color: #64748b;
-  background: #f8fafc;
+.share-pdf-image-icon {
+  font-size: 16px;
 }
 
-.share-label-ai {
-  color: #4f46e5;
-  background: linear-gradient(135deg, #f8fafc 0%, rgba(99, 102, 241, 0.04) 100%);
+.share-pdf-user-bubble {
+  display: inline-block;
+  max-width: 75%;
+  background: #f3f4f6;
+  color: #1f2937;
+  padding: 12px 20px;
+  border-radius: 18px;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  text-align: left;
+  word-wrap: break-word;
 }
 
-/* Role pill badge (matches .role-pill) */
-.share-pdf-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.share-pill-user {
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.share-pill-ai {
-  background: rgba(99, 102, 241, 0.1);
-  color: #4f46e5;
-}
-
-/* Content area */
-.share-pdf-content {
-  padding: 16px 20px;
-  font-size: 0.88rem;
-  line-height: 1.8;
-  color: #334155;
+/* ── AI message: plain flowing text, generous spacing ── */
+.share-pdf-ai-content {
+  padding: 20px 0 12px;
+  font-size: 0.92rem;
+  line-height: 1.85;
+  color: #1f2937;
 }
 
 /* ── Markdown overrides for share PDF ── */
-.share-pdf-content .content-render-pass,
-.share-pdf-content .markdown-body {
+.share-pdf-ai-content .content-render-pass,
+.share-pdf-ai-content .markdown-body {
   background: transparent;
-  color: #334155;
-  font-size: 0.88rem;
-  line-height: 1.8;
+  color: #1f2937;
+  font-size: 0.92rem;
+  line-height: 1.85;
 }
 
-/* Heading hierarchy (matching normal pipeline) */
+/* Heading hierarchy — LARGE like ideal */
 .share-pdf-doc .markdown-body h1 {
-  font-size: 1.35rem;
-  font-weight: 900;
-  color: #1e293b;
-  margin: 1.2rem 0 0.8rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 2px solid #6366f1;
-  letter-spacing: -0.02em;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 1.6rem 0 0.8rem;
+  padding-bottom: 0;
+  border-bottom: none;
+  line-height: 1.3;
 }
 
 .share-pdf-doc .markdown-body h2 {
-  font-size: 1.1rem;
+  font-size: 1.5rem;
   font-weight: 700;
-  color: #1e293b;
-  margin: 1.5rem 0 0.6rem;
-  border-left: 4px solid #6366f1;
-  padding-left: 1rem;
+  color: #111827;
+  margin: 1.8rem 0 0.7rem;
+  border-left: none;
+  padding-left: 0;
+  line-height: 1.3;
 }
 
 .share-pdf-doc .markdown-body h3 {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 1rem 0 0.4rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 1.4rem 0 0.5rem;
+  line-height: 1.35;
 }
 
 .share-pdf-doc .markdown-body h4 {
-  font-size: 0.9rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  color: #334155;
-  margin: 0.8rem 0 0.3rem;
+  color: #374151;
+  margin: 1rem 0 0.4rem;
 }
 
 .share-pdf-doc .markdown-body p {
-  margin: 0 0 0.7rem;
+  margin: 0 0 1rem;
 }
 
 /* Hide interactive-only elements */
@@ -6479,27 +6685,104 @@ table {
   display: none !important;
 }
 
-/* Compact code blocks */
+/* ── LIGHT code blocks (matching ideal) ── */
 .share-pdf-doc .code-block-container {
-  margin: 8px 0 !important;
+  margin: 12px 0 !important;
   box-shadow: none !important;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
+  border: 1px solid #e5e7eb;
 }
 
 .share-pdf-doc .code-pre {
-  padding: 10px 14px !important;
-  border-radius: 6px !important;
+  padding: 14px 18px !important;
+  border-radius: 8px !important;
   border-top: none !important;
+  background: #f6f8fa !important;
 }
 
 .share-pdf-doc .code-pre code {
-  font-size: 0.78rem !important;
-  line-height: 1.5 !important;
+  font-size: 0.82rem !important;
+  line-height: 1.6 !important;
+  color: #1f2937 !important;
 }
 
 .share-pdf-doc pre {
-  margin: 8px 0 !important;
+  margin: 12px 0 !important;
+}
+
+/* ── Light highlight.js theme for share PDF ── */
+.share-pdf-doc .hljs-keyword,
+.share-pdf-doc .hljs-selector-tag,
+.share-pdf-doc .hljs-built_in {
+  color: #cf222e;
+}
+
+.share-pdf-doc .hljs-string,
+.share-pdf-doc .hljs-attr {
+  color: #0a3069;
+}
+
+.share-pdf-doc .hljs-number,
+.share-pdf-doc .hljs-literal {
+  color: #0550ae;
+}
+
+.share-pdf-doc .hljs-comment,
+.share-pdf-doc .hljs-quote {
+  color: #6e7781;
+  font-style: italic;
+}
+
+.share-pdf-doc .hljs-function .hljs-title,
+.share-pdf-doc .hljs-title.function_ {
+  color: #8250df;
+}
+
+.share-pdf-doc .hljs-class .hljs-title,
+.share-pdf-doc .hljs-title.class_ {
+  color: #953800;
+}
+
+.share-pdf-doc .hljs-variable,
+.share-pdf-doc .hljs-template-variable {
+  color: #953800;
+}
+
+.share-pdf-doc .hljs-type,
+.share-pdf-doc .hljs-params {
+  color: #953800;
+}
+
+.share-pdf-doc .hljs-meta {
+  color: #0550ae;
+}
+
+.share-pdf-doc .hljs-regexp {
+  color: #116329;
+}
+
+.share-pdf-doc .hljs-symbol,
+.share-pdf-doc .hljs-bullet {
+  color: #116329;
+}
+
+.share-pdf-doc .hljs-addition {
+  color: #116329;
+  background: rgba(46, 160, 67, 0.1);
+}
+
+.share-pdf-doc .hljs-deletion {
+  color: #cf222e;
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.share-pdf-doc .hljs-operator {
+  color: #cf222e;
+}
+
+.share-pdf-doc .hljs-punctuation {
+  color: #24292f;
 }
 
 /* Kill stray decorations from ChatGPT HTML markup */
@@ -6521,70 +6804,73 @@ table {
 
 .share-pdf-doc hr {
   border: none !important;
-  height: 1px;
-  background: #e2e8f0;
-  margin: 12px 0;
+  height: 0;
+  border-bottom: 1.5px dashed #d1d5db !important;
+  margin: 16px 0;
 }
 
-/* ── Tables (matching normal pipeline gradient header) ── */
-.share-pdf-content table {
-  font-size: 0.8rem;
+/* ── Tables (simple with horizontal dividers) ── */
+.share-pdf-ai-content table {
+  font-size: 0.85rem;
   border-collapse: collapse;
   width: 100%;
-  margin: 12px 0;
-  border-radius: 6px;
-  overflow: hidden;
+  margin: 16px 0;
 }
 
-.share-pdf-content th,
-.share-pdf-content td {
-  border: 1px solid #e2e8f0;
-  padding: 8px 12px;
+.share-pdf-ai-content th,
+.share-pdf-ai-content td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 10px 16px;
   text-align: left;
 }
 
-.share-pdf-content th {
-  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
-  font-weight: 700;
-  color: #1e293b;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.share-pdf-ai-content th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #111827;
+  font-size: 0.82rem;
+  border-bottom: 2px solid #d1d5db;
 }
 
-/* ── Lists ── */
-.share-pdf-content ul,
-.share-pdf-content ol {
-  padding-left: 20px;
-  margin: 8px 0;
+.share-pdf-ai-content tr:last-child td {
+  border-bottom: 1px solid #d1d5db;
 }
 
-.share-pdf-content li {
-  margin-bottom: 4px;
+/* ── Lists — more spacious ── */
+.share-pdf-ai-content ul,
+.share-pdf-ai-content ol {
+  padding-left: 28px;
+  margin: 12px 0;
+}
+
+.share-pdf-ai-content li {
+  margin-bottom: 8px;
+  line-height: 1.7;
 }
 
 /* ── Inline code ── */
-.share-pdf-content .inline-code {
-  background: #f1f5f9;
-  color: #7c3aed;
-  padding: 1px 5px;
+.share-pdf-ai-content .inline-code {
+  background: #f3f4f6;
+  color: #1f2937;
+  padding: 2px 6px;
   border-radius: 4px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
 /* ── Bold/emphasis ── */
-.share-pdf-content strong {
-  color: #1e293b;
-  font-weight: 600;
+.share-pdf-ai-content strong {
+  color: #111827;
+  font-weight: 700;
 }
 
-/* ── Blockquotes (matching normal pipeline) ── */
-.share-pdf-content blockquote {
-  border-left: 4px solid #6366f1;
+/* ── Blockquotes — subtle left border ── */
+.share-pdf-ai-content blockquote {
+  border-left: 3px solid #d1d5db;
   padding: 10px 16px;
-  background: linear-gradient(135deg, #faf9ff 0%, #eef2ff 100%);
-  color: #475569;
-  margin: 12px 0;
+  background: #f9fafb;
+  color: #4b5563;
+  margin: 16px 0;
   border-radius: 0 6px 6px 0;
   font-style: italic;
 }
@@ -6853,12 +7139,13 @@ table {
 
 .convert-btn--primary {
   flex: 1;
-  background: #fff;
-  color: var(--color-primary-700);
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
 }
 .convert-btn--primary:hover:not(:disabled) {
-  background: #f0f0ff;
+  background: rgba(255, 255, 255, 0.25);
   transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
@@ -7283,12 +7570,13 @@ table {
 }
 
 .home-btn--primary {
-  background: #fff;
-  color: var(--color-primary-700);
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
 }
 .home-btn--primary:hover {
-  background: #f0f0ff;
+  background: rgba(255, 255, 255, 0.25);
   transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
@@ -7655,15 +7943,15 @@ table {
 }
 
 .home-pricing-cta--pro {
-  background: #fff;
-  color: var(--color-primary-700);
-  border-color: transparent;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%);
+  color: #fff;
+  border-color: rgba(129, 140, 248, 0.4);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
 }
 .home-pricing-cta--pro:hover {
-  background: #f0f0ff;
+  background: linear-gradient(135deg, #a5b4fc 0%, #818cf8 100%);
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
 }
 
 .home-pricing-byok {

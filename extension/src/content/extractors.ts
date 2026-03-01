@@ -1,25 +1,19 @@
 // ══════════════════════════════════════════════════════════
-// CONTENT SCRIPT
-//
-// Injected into gemini.google.com and chatgpt.com.
-// Listens for CAPTURE_REQUEST messages from the side panel,
-// reads the conversation DOM, and responds with RawTurn[].
+// DOM EXTRACTORS — Gemini & ChatGPT conversation scrapers
 // ══════════════════════════════════════════════════════════
 
-import type { ExtMessage, RawTurn } from '../shared/messages';
+import type { RawTurn } from '../shared/messages';
 
 // ── Gemini DOM Reader ──────────────────────────────────────
-function extractFromGemini(): RawTurn[] {
+export function extractFromGemini(): RawTurn[] {
   const turns: RawTurn[] = [];
 
-  // Gemini renders each exchange as <user-query> / <model-response> custom elements
   const elements = document.querySelectorAll('user-query, model-response');
 
   elements.forEach(el => {
     const tag = el.tagName.toLowerCase();
     const role: 'user' | 'assistant' = tag === 'user-query' ? 'user' : 'assistant';
 
-    // Try to extract the markdown text — Gemini wraps it in various class names
     const textEl =
       el.querySelector('.markdown') ??
       el.querySelector('.model-response-text') ??
@@ -47,7 +41,7 @@ function extractFromGemini(): RawTurn[] {
 }
 
 // ── ChatGPT DOM Reader ─────────────────────────────────────
-function extractFromChatGPT(): RawTurn[] {
+export function extractFromChatGPT(): RawTurn[] {
   const turns: RawTurn[] = [];
 
   const elements = document.querySelectorAll('[data-message-author-role]');
@@ -56,7 +50,6 @@ function extractFromChatGPT(): RawTurn[] {
     const role = el.getAttribute('data-message-author-role');
     if (role !== 'user' && role !== 'assistant') return;
 
-    // ChatGPT wraps response content in .markdown or .prose
     const textEl =
       el.querySelector('.markdown') ??
       el.querySelector('[class*="markdown"]') ??
@@ -73,55 +66,50 @@ function extractFromChatGPT(): RawTurn[] {
     }
   });
 
+  // Fallback 1: article[data-testid^="conversation-turn-"] containers
+  if (turns.length === 0) {
+    const articles = document.querySelectorAll('article[data-testid^="conversation-turn-"]');
+    articles.forEach(article => {
+      const authorEl = article.querySelector('[data-message-author-role]');
+      const role = authorEl?.getAttribute('data-message-author-role');
+      if (role !== 'user' && role !== 'assistant') return;
+
+      const textEl =
+        article.querySelector('.markdown') ??
+        article.querySelector('[class*="markdown"]') ??
+        article.querySelector('.prose') ??
+        article;
+
+      const text = (textEl as HTMLElement).innerText ?? '';
+      if (text.trim()) {
+        turns.push({ role: role as 'user' | 'assistant', text: text.trim() });
+      }
+    });
+  }
+
+  // Fallback 2: generic turn containers
+  if (turns.length === 0) {
+    const containers = document.querySelectorAll('[class*="ConversationItem"], [class*="chat-message"], [class*="turn"]');
+    let turnIndex = 0;
+    containers.forEach(el => {
+      const text = (el as HTMLElement).innerText ?? '';
+      if (text.trim()) {
+        turns.push({
+          role: turnIndex % 2 === 0 ? 'user' : 'assistant',
+          text: text.trim(),
+        });
+        turnIndex++;
+      }
+    });
+  }
+
   return turns;
 }
 
 // ── Site Detection ─────────────────────────────────────────
-function detectSite(): 'gemini' | 'chatgpt' | null {
+export function detectSite(): 'gemini' | 'chatgpt' | null {
   const hostname = window.location.hostname;
   if (hostname.includes('gemini.google.com')) return 'gemini';
   if (hostname.includes('chatgpt.com')) return 'chatgpt';
   return null;
 }
-
-// ── Message Listener ───────────────────────────────────────
-chrome.runtime.onMessage.addListener((message: ExtMessage, _sender, sendResponse) => {
-  if (message.type !== 'CAPTURE_REQUEST') return;
-
-  try {
-    const site = detectSite();
-
-    if (!site) {
-      sendResponse({
-        type: 'CAPTURE_ERROR',
-        message: 'Unsupported site. Please open gemini.google.com or chatgpt.com.',
-      } satisfies ExtMessage);
-      return true;
-    }
-
-    const turns: RawTurn[] =
-      site === 'gemini' ? extractFromGemini() : extractFromChatGPT();
-
-    if (turns.length === 0) {
-      sendResponse({
-        type: 'CAPTURE_ERROR',
-        message: 'No conversation found on this page. Start a chat and try again.',
-      } satisfies ExtMessage);
-      return true;
-    }
-
-    sendResponse({
-      type: 'CAPTURE_RESULT',
-      turns,
-      site,
-    } satisfies ExtMessage);
-  } catch (err) {
-    sendResponse({
-      type: 'CAPTURE_ERROR',
-      message: `Extraction failed: ${String(err)}`,
-    } satisfies ExtMessage);
-  }
-
-  // Return true to keep the message channel open for async sendResponse
-  return true;
-});

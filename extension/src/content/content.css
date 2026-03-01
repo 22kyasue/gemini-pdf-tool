@@ -1,0 +1,628 @@
+/* ════════════════════════════════════════════════════════════
+   GEMINI PDF TOOL — SHADOW DOM STYLES
+   Injected via ?inline import. Fully isolated from host page.
+   ════════════════════════════════════════════════════════════ */
+
+/* ── Reset ────────────────────────────────────────── */
+:host {
+  all: initial;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: #e2e8f0;
+  line-height: 1.5;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ════════════════════════════════════════════════════
+   FLOATING BUTTON
+   ════════════════════════════════════════════════════ */
+
+.gpt-export-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #14b8a6 0%, #6366f1 100%);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.gpt-export-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.5), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.gpt-export-fab:active {
+  transform: translateY(0);
+}
+
+.gpt-export-fab svg {
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .gpt-export-fab {
+    bottom: 80px;
+  }
+}
+
+/* ════════════════════════════════════════════════════
+   MODAL OVERLAY
+   ════════════════════════════════════════════════════ */
+
+.gpt-export-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  animation: gpt-fade-in 0.2s ease;
+}
+
+@keyframes gpt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.gpt-export-modal {
+  width: 420px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #1e293b;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  animation: gpt-slide-up 0.25s ease;
+}
+
+@keyframes gpt-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Modal Header ───────────────────────────────── */
+.gpt-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 0;
+}
+
+.gpt-modal-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #f1f5f9;
+  letter-spacing: -0.01em;
+}
+
+.gpt-modal-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.gpt-modal-close:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Turn Info ────────────────────────────────────── */
+.gpt-modal-info {
+  padding: 8px 24px 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.gpt-modal-info strong {
+  color: #a5b4fc;
+  font-weight: 700;
+}
+
+/* ── Modal Body ──────────────────────────────────── */
+.gpt-modal-body {
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Format Section ──────────────────────────────── */
+.gpt-format-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.gpt-format-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.gpt-format-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 4px;
+  background: #0f172a;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gpt-format-btn:hover {
+  background: #1a2744;
+  color: #e2e8f0;
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.gpt-format-btn.active {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: #6366f1;
+  color: #a5b4fc;
+}
+
+.gpt-format-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* ── Filename Input ──────────────────────────────── */
+.gpt-filename-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gpt-filename-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gpt-filename-input {
+  padding: 10px 14px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+
+.gpt-filename-input:focus {
+  border-color: #6366f1;
+}
+
+.gpt-filename-input::placeholder {
+  color: #475569;
+}
+
+/* ── Download Button ─────────────────────────────── */
+.gpt-download-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gpt-download-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+}
+
+.gpt-download-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Spinner ──────────────────────────────────────── */
+.gpt-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: gpt-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes gpt-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Toast ────────────────────────────────────────── */
+.gpt-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  background: #22c55e;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  z-index: 2147483647;
+  animation: gpt-toast-in 0.25s ease;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
+}
+
+.gpt-toast.gpt-toast-error {
+  background: #ef4444;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+}
+
+@keyframes gpt-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ════════════════════════════════════════════════════
+   MESSAGE SELECTION LIST
+   ════════════════════════════════════════════════════ */
+
+.gpt-messages-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gpt-messages-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gpt-messages-toggle {
+  background: none;
+  border: none;
+  color: #818cf8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.gpt-messages-toggle:hover {
+  background: rgba(129, 140, 248, 0.1);
+}
+
+.gpt-messages-toggle:disabled {
+  color: #475569;
+  cursor: not-allowed;
+}
+
+.gpt-messages-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 6px;
+  background: #0f172a;
+}
+
+.gpt-messages-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.gpt-messages-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.gpt-messages-list::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+.gpt-msg-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.gpt-msg-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gpt-msg-row.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gpt-msg-row.disabled:hover {
+  background: transparent;
+}
+
+.gpt-msg-checkbox {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.gpt-msg-checkbox:disabled {
+  cursor: not-allowed;
+}
+
+.gpt-msg-role {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 1px;
+}
+
+.gpt-msg-role-user {
+  background: #312e81;
+  color: #a5b4fc;
+}
+
+.gpt-msg-role-assistant {
+  background: #064e3b;
+  color: #6ee7b7;
+}
+
+.gpt-msg-text {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.gpt-selected-count {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.gpt-selected-count strong {
+  color: #a5b4fc;
+}
+
+/* ── Auth Status Bar ─────────────────────────────── */
+
+.gpt-auth-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 20px;
+  background: rgba(30, 41, 59, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+}
+
+.gpt-auth-email {
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gpt-auth-pro-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.gpt-auth-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #818cf8;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.gpt-auth-signin:hover {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+/* ── Pro Badge & Upsell ──────────────────────────── */
+
+.gpt-pro-overlay {
+  position: relative;
+}
+
+.gpt-pro-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 10px;
+  margin-top: 4px;
+}
+
+.gpt-pro-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-radius: 4px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.gpt-pro-text {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.gpt-pro-link {
+  background: none;
+  border: none;
+  color: #818cf8;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.gpt-pro-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Sign-In Prompt (replaces PRO banner) ────── */
+
+.gpt-signin-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 10px;
+  margin-top: 4px;
+  text-align: center;
+  color: #c4b5fd;
+}
+
+.gpt-signin-prompt svg {
+  flex-shrink: 0;
+}
+
+.gpt-signin-prompt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gpt-signin-prompt-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.gpt-signin-prompt-text p {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.gpt-signin-prompt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gpt-signin-prompt-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}

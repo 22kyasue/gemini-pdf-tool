@@ -28,11 +28,14 @@ interface ConvertPageProps {
   onSignIn: () => void;
   onSignOut: () => void;
   onNavigateEditor: (title?: string, content?: string, llm?: string) => void;
+  onCheckPdfLimit: () => boolean;
+  onPdfExported: () => void;
 }
 
 export function ConvertPage({
   t, lang, toggleLang, user, isAnonymous,
   onSignIn, onSignOut, onNavigateEditor,
+  onCheckPdfLimit, onPdfExported,
 }: ConvertPageProps) {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -74,10 +77,12 @@ export function ConvertPage({
       const title = result.title || 'Imported Chat';
 
       if (mode === 'pdf') {
+        if (!onCheckPdfLimit()) { setLoading(false); return; }
         setExporting(true);
         toast('info', t.generatingPdf || 'Generating PDF...', 3000);
         try {
           await exportSharePdf(title, result.turns, result.platform, target);
+          onPdfExported();
           toast('success', 'PDF downloaded!', 3000);
         } catch (err) {
           console.error('[SharePDF]', err);
