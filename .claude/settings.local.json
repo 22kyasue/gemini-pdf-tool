@@ -49,7 +49,10 @@
       "Bash(lsof -ti:5173 | xargs kill -9 2>/dev/null; sleep 1 && echo \"Port cleared\")",
       "Bash(npm ls:*)",
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(do:*)",
+      "Bash(npm run:*)",
+      "Bash(rm:*)"
     ]
   }
 }
