@@ -43,7 +43,10 @@
       "Bash(pip install:*)",
       "Bash(python:*)",
       "Bash(PYTHONIOENCODING=utf-8 python:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(timeout 5 npm run dev:*)",
+      "Bash(npm run dev 2>&1)",
+      "Bash(lsof -ti:5173 | xargs kill -9 2>/dev/null; sleep 1 && echo \"Port cleared\")"
     ]
   }
 }

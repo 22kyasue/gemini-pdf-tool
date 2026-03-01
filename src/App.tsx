@@ -46,6 +46,7 @@ import { UpgradeModal } from './components/UpgradeModal';
 import { SignInPromptModal } from './components/SignInPromptModal';
 import { EnhanceThread } from './components/EnhanceThread';
 import { ShareLinkBar } from './components/ShareLinkBar';
+import { ConvertPage } from './components/ConvertPage';
 import { looksLikeShareUrl } from './utils/shareImport';
 import { exportSharePdf } from './utils/exportSharePdf';
 
@@ -96,8 +97,25 @@ The narrative follows a "Investment -> Innovation -> Efficiency" cycle.
 
 This confirms our 2026 sustainability targets are achievable ahead of schedule.`;
 
+// Simple hash-based route helper
+function getRoute(): 'editor' | 'convert' {
+  const hash = window.location.hash.replace('#', '').replace(/^\//, '');
+  return hash === 'convert' ? 'convert' : 'editor';
+}
+
 export default function App() {
   const { lang, toggleLang, t } = useTranslation();
+  const [route, setRoute] = useState<'editor' | 'convert'>(getRoute);
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(getRoute());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const navigateTo = useCallback((target: 'editor' | 'convert') => {
+    window.location.hash = target === 'convert' ? '#/convert' : '#/';
+  }, []);
 
   // -- Auth & Usage --
   const { user, isAnonymous, signInWithGoogle, signInWithEmail, signUp, signOut } = useAuth();
@@ -821,6 +839,47 @@ export default function App() {
     poll();
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Convert Page Route ──
+  if (route === 'convert') {
+    return (
+      <>
+        <ConvertPage
+          t={t}
+          lang={lang}
+          toggleLang={toggleLang}
+          user={user}
+          isAnonymous={isAnonymous}
+          plan={plan}
+          onSignIn={() => setShowAuthModal(true)}
+          onSignOut={signOut}
+          onNavigateEditor={(title, content, llm) => {
+            if (title && content) {
+              setSources(prev => prev.map(s => s.id === activeSourceId ? {
+                ...s, title, content,
+                llm: (llm || 'AI') as import('./types').LLMName,
+                apiSplitTurns: undefined,
+                apiSplitRawText: undefined,
+                enhanceHistory: undefined,
+                enhanceCount: undefined,
+              } : s));
+            }
+            navigateTo('editor');
+          }}
+        />
+        <ToastContainer />
+        {showAuthModal && (
+          <AuthModal
+            onClose={() => setShowAuthModal(false)}
+            onGoogleSignIn={signInWithGoogle}
+            onEmailSignIn={signInWithEmail}
+            onEmailSignUp={signUp}
+            t={t}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <div
       className="app-container"
@@ -836,6 +895,12 @@ export default function App() {
         </div>
 
         <div className="header-actions">
+          {/* Convert page link */}
+          <div className="header-group">
+            <button onClick={() => navigateTo('convert')} className="btn btn-ghost no-print" style={{ fontSize: '0.8rem', gap: 5, fontWeight: 600 }} data-tooltip={t.convertToPdf || 'Convert to PDF'}>
+              <Link2 size={14} /> <span className="desktop-only">{t.convertToPdf || 'Convert'}</span>
+            </button>
+          </div>
           {/* Group 1: Login/avatar + Settings */}
           <div className="header-group">
             {user && !isAnonymous ? (
