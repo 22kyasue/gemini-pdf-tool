@@ -1,7 +1,7 @@
 {
-  "name": "LLM Dialogue Archive",
-  "short_name": "LLM Archive",
-  "description": "Convert AI chat conversations into professional PDF documents",
+  "name": "ChatSource",
+  "short_name": "ChatSource",
+  "description": "Export your AI chat conversations to PDF for NotebookLM and other learning tools.",
   "start_url": "/gemini-pdf-tool/",
   "scope": "/gemini-pdf-tool/",
   "display": "standalone",

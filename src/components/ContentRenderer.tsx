@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type ComponentPropsWithoutRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -229,13 +229,13 @@ export function ContentRenderer({ content }: { content: string }) {
                                 remarkPlugins={[remarkGfm, remarkMath]}
                                 rehypePlugins={[rehypeRaw, rehypeKatex]}
                                 components={{
-                                    sup({ node, className, children, ...props }) {
+                                    sup({ node: _node, className, children, ...props }) {
                                         if (className === 'cit-badge') {
                                             return <CitationBadge num={String(children)} />;
                                         }
                                         return <sup className={className} {...props}>{children}</sup>;
                                     },
-                                    code({ node, className, children, ...props }: any) {
+                                    code({ node: _node, className, children, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) {
                                         const match = /language-(\w+)/.exec(className || '');
                                         const lang = match?.[1];
                                         const codeStr = String(children).replace(/\n$/, '');

@@ -32,7 +32,7 @@ const INLINE_JUNK_RE: RegExp[] = [
     /^Analyzing/i,                         // ChatGPT analyzing
     /^\s*\d+\s*\/\s*\d+$/,               // "1/3" page indicators
     /^draft\s+\d+$/i,                     // "Draft 1"
-    /^[👍👎🔊📋✏️🔄⋮…]{1,4}$/u,            // emoji-only lines
+    /^(👍|👎|🔊|📋|✏️|🔄|⋮|…){1,4}$/u,       // emoji-only lines
 ];
 
 /**
@@ -56,7 +56,7 @@ export function normalize(text: string): string {
     result = result.normalize('NFKC');
 
     // 3. Invisible character removal
-    result = result.replace(/[\u200B\u200C\u200D\uFEFF\u00AD]/gu, '');
+    result = result.replace(/\u200B|\u200C|\u200D|\uFEFF|\u00AD/gu, '');
 
     // 4. Full-width space → half-width (but preserve indentation intent)
     result = result.replace(/\u3000/g, ' ');

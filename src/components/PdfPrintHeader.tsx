@@ -21,8 +21,8 @@ export function PdfPrintHeader({ llm }: { llm: string }) {
                 <div className="pdf-brand">
                     <FileText size={24} className="text-indigo-600" />
                     <div className="pdf-brand-text">
-                        <div className="pdf-brand-main">LLM DIALOGUE ARCHIVE</div>
-                        <div className="pdf-brand-sub">Professional Intelligence Report</div>
+                        <div className="pdf-brand-main">CHATSOURCE</div>
+                        <div className="pdf-brand-sub">AI Chat Export</div>
                     </div>
                 </div>
                 <div className="pdf-meta">
