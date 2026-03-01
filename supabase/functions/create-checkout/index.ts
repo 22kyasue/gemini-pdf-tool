@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     }
 
     // ── Parse request ─────────────────────────────────────────
-    const { priceId } = await req.json() as { priceId: string };
+    const { priceId, embedded } = await req.json() as { priceId: string; embedded?: boolean };
     if (!priceId) {
       return json({ error: 'priceId is required' }, 400);
     }
@@ -67,14 +67,28 @@ Deno.serve(async (req) => {
 
     // ── Create Checkout session ───────────────────────────────
     const origin = req.headers.get('origin') || 'http://localhost:5173';
+
+    if (embedded) {
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        line_items: [{ price: priceId, quantity: 1 }],
+        mode: 'subscription',
+        ui_mode: 'embedded',
+        return_url: `${origin}?checkout=success`,
+        allow_promotion_codes: true,
+      });
+      return json({ clientSecret: session.client_secret });
+    }
+
+    // Fallback: redirect mode
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       mode: 'subscription',
       success_url: `${origin}?checkout=success`,
       cancel_url: `${origin}?checkout=cancel`,
+      allow_promotion_codes: true,
     });
-
     return json({ url: session.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal server error';

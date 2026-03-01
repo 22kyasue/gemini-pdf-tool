@@ -18,10 +18,22 @@ import html2canvas from 'html2canvas';
 //    when necessary to seamlessly match the document.
 // ══════════════════════════════════════════════════════════
 
+export interface PdfFooter {
+    left: string;
+    right?: string; // auto-filled with "Page X of Y" if omitted
+}
+
+export interface PdfOutlineEntry {
+    title: string;
+    pageNumber: number;
+}
+
 export async function exportToPdf(
     element: HTMLElement,
     rawFilename: string,
     scrollContainer?: HTMLElement | null,
+    footer?: PdfFooter,
+    outline?: PdfOutlineEntry[],
 ): Promise<void> {
     const filename = rawFilename.endsWith('.pdf') ? rawFilename : `${rawFilename}.pdf`;
 
@@ -274,6 +286,33 @@ export async function exportToPdf(
                 chunkContainer.remove();
             }
         }
+
+        // ======== PAGE FOOTERS ========
+        if (footer) {
+            const totalPages = pdf.getNumberOfPages();
+            for (let p = 1; p <= totalPages; p++) {
+                pdf.setPage(p);
+                pdf.setFontSize(8);
+                pdf.setTextColor(150, 150, 150);
+                // Left-aligned footer text
+                pdf.text(footer.left, MARGIN_MM, A4_HEIGHT_MM - 8);
+                // Right-aligned page number
+                const pageLabel = footer.right || `Page ${p} of ${totalPages}`;
+                const labelWidth = pdf.getTextWidth(pageLabel);
+                pdf.text(pageLabel, A4_WIDTH_MM - MARGIN_MM - labelWidth, A4_HEIGHT_MM - 8);
+            }
+        }
+        // =================================
+
+        // ======== PDF OUTLINE / BOOKMARKS ========
+        if (outline?.length) {
+            const totalPages = pdf.getNumberOfPages();
+            for (const entry of outline) {
+                const page = Math.max(1, Math.min(entry.pageNumber, totalPages));
+                pdf.outline.add(null, entry.title, { pageNumber: page });
+            }
+        }
+        // ==========================================
 
         console.log(`[PDF] Render complete. Saving ${filename}...`);
         pdf.save(filename);

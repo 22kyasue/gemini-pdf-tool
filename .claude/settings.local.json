@@ -23,7 +23,27 @@
       "Bash(cat:*)",
       "Bash(tasklist 2>/dev/null | grep -i node | head -20 || ps aux | grep node | head -20)",
       "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm run lint 2>&1)",
-      "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm install @supabase/supabase-js 2>&1)"
+      "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm install @supabase/supabase-js 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\stake\\\\githubproject\\\\gemini-pdf-tool\" && npm run deploy 2>&122222222222)",
+      "Bash(cd C:\\\\Users\\\\stake\\\\githubproject\\\\gemini-pdf-tool:*)",
+      "Bash(npm install:*)",
+      "Bash(npx supabase:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_7436a38038dfe939a5519b0642c8a547841f1460 npx supabase:*)",
+      "Bash(npx vite:*)",
+      "WebFetch(domain:supabase.com)",
+      "WebFetch(domain:chat2doc.net)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:community.openai.com)",
+      "WebFetch(domain:support.google.com)",
+      "WebFetch(domain:help.openai.com)",
+      "WebFetch(domain:blog.scottlogic.com)",
+      "WebFetch(domain:apify.com)",
+      "WebFetch(domain:docs.scrapeless.com)",
+      "Bash(supabase functions:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(node:*)"
     ]
   }
 }

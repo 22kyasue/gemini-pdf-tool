@@ -6,9 +6,30 @@ interface AuthModalProps {
   onSignInWithGoogle: () => Promise<void>;
   onSignInWithEmail: (email: string, password: string) => Promise<void>;
   onSignUp: (email: string, password: string) => Promise<void>;
+  t: {
+    authWelcomeBack: string;
+    authCreateAccount: string;
+    authSignInSub: string;
+    authSignUpSub: string;
+    authContinueGoogle: string;
+    authOr: string;
+    authEmail: string;
+    authPassword: string;
+    authPasswordHintSignup: string;
+    authSignInBtn: string;
+    authCreateBtn: string;
+    authPleaseWait: string;
+    authNoAccount: string;
+    authHasAccount: string;
+    authSignUpFree: string;
+    signIn: string;
+    authCheckEmail: string;
+    authCheckEmailMsg: string;
+    authGotIt: string;
+  };
 }
 
-export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSignUp }: AuthModalProps) {
+export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSignUp, t }: AuthModalProps) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +47,7 @@ export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSi
         onClose();
       } else {
         await onSignUp(email, password);
-        setSuccess('Check your email and click the confirmation link to activate your account.');
+        setSuccess(t.authCheckEmailMsg);
       }
     } catch (err) {
       setError((err as Error).message || 'Authentication failed');
@@ -57,10 +78,10 @@ export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSi
 
         {success ? (
           <div className="auth-success-state">
-            <div className="auth-success-icon">✉</div>
-            <h3>Check your email</h3>
+            <div className="auth-success-icon">&#9993;</div>
+            <h3>{t.authCheckEmail}</h3>
             <p>{success}</p>
-            <button className="auth-btn-primary" onClick={onClose}>Got it</button>
+            <button className="auth-btn-primary" onClick={onClose}>{t.authGotIt}</button>
           </div>
         ) : (
           <>
@@ -76,11 +97,9 @@ export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSi
                 </svg>
               </div>
               <div>
-                <h2 className="auth-brand-title">{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2>
+                <h2 className="auth-brand-title">{mode === 'signin' ? t.authWelcomeBack : t.authCreateAccount}</h2>
                 <p className="auth-brand-sub">
-                  {mode === 'signin'
-                    ? 'Sign in to export your AI chats to PDF'
-                    : 'Get 15 free exports per month, no credit card needed'}
+                  {mode === 'signin' ? t.authSignInSub : t.authSignUpSub}
                 </p>
               </div>
             </div>
@@ -93,15 +112,15 @@ export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSi
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
               </svg>
-              Continue with Google
+              {t.authContinueGoogle}
             </button>
 
-            <div className="auth-divider"><span>or</span></div>
+            <div className="auth-divider"><span>{t.authOr}</span></div>
 
             {/* Email form */}
             <form onSubmit={handleEmailSubmit} className="auth-form">
               <div className="auth-field">
-                <label htmlFor="auth-email">Email</label>
+                <label htmlFor="auth-email">{t.authEmail}</label>
                 <div className="auth-input-wrap">
                   <Mail size={14} className="auth-input-icon" />
                   <input
@@ -117,7 +136,7 @@ export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSi
                 </div>
               </div>
               <div className="auth-field">
-                <label htmlFor="auth-password">Password</label>
+                <label htmlFor="auth-password">{t.authPassword}</label>
                 <div className="auth-input-wrap">
                   <Lock size={14} className="auth-input-icon" />
                   <input
@@ -125,7 +144,7 @@ export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSi
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder={mode === 'signup' ? 'At least 6 characters' : '••••••••'}
+                    placeholder={mode === 'signup' ? t.authPasswordHintSignup : '••••••••'}
                     required
                     minLength={6}
                     autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
@@ -139,21 +158,21 @@ export function AuthModal({ onClose, onSignInWithGoogle, onSignInWithEmail, onSi
 
               <button type="submit" className="auth-btn-primary" disabled={loading}>
                 {loading
-                  ? <><Loader size={15} className="auth-spinner" /> Please wait...</>
-                  : mode === 'signin' ? 'Sign In' : 'Create Account'
+                  ? <><Loader size={15} className="auth-spinner" /> {t.authPleaseWait}</>
+                  : mode === 'signin' ? t.authSignInBtn : t.authCreateBtn
                 }
               </button>
             </form>
 
             <p className="auth-switch">
-              {mode === 'signin' ? "Don't have an account?" : 'Already have an account?'}
+              {mode === 'signin' ? t.authNoAccount : t.authHasAccount}
               {' '}
               <button
                 type="button"
                 className="auth-switch-btn"
                 onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); }}
               >
-                {mode === 'signin' ? 'Sign up free' : 'Sign in'}
+                {mode === 'signin' ? t.authSignUpFree : t.signIn}
               </button>
             </p>
           </>

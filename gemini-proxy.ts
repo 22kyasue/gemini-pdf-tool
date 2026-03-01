@@ -10,11 +10,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const FREE_CALL_LIMIT = 10;
-const FREE_WORD_LIMIT = 50_000;
-const USAGE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const ANON_CALL_LIMIT = 1;
-const ANON_WORD_LIMIT = 10_000;
+const FREE_CALL_LIMIT = 15;
+const FREE_WORD_LIMIT = 100_000;
 const MODEL = 'gemini-2.5-flash';
 
 Deno.serve(async (req) => {
@@ -44,7 +41,7 @@ Deno.serve(async (req) => {
     if (!userRes.ok) {
       return json({ error: 'Invalid or expired token' }, 401);
     }
-    const user = await userRes.json() as { id: string; email?: string; is_anonymous?: boolean };
+    const user = await userRes.json() as { id: string; email?: string };
     if (!user?.id) {
       return json({ error: 'Invalid or expired token' }, 401);
     }
@@ -67,7 +64,7 @@ Deno.serve(async (req) => {
     // ── Fetch profile + enforce limits ────────────────────────
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('plan, api_calls_used, words_used, usage_period_start')
+      .select('plan, api_calls_used, words_used')
       .eq('id', user.id)
       .single();
 
@@ -75,53 +72,28 @@ Deno.serve(async (req) => {
       return json({ error: 'User profile not found' }, 404);
     }
 
-    // Weekly auto-reset for free users
-    if (profile.plan === 'free') {
-      const periodStart = profile.usage_period_start
-        ? new Date(profile.usage_period_start as string).getTime()
-        : 0;
-      if (Date.now() - periodStart >= USAGE_PERIOD_MS) {
-        profile.api_calls_used = 0;
-        profile.words_used = 0;
-        await supabase
-          .from('profiles')
-          .update({
-            api_calls_used: 0,
-            words_used: 0,
-            usage_period_start: new Date().toISOString(),
-          })
-          .eq('id', user.id);
-      }
-    }
-
     // title calls are free — don't count against quota
     if (operation !== 'title' && profile.plan === 'free') {
-      const isAnon = !!user.is_anonymous;
-      const callLimit = isAnon ? ANON_CALL_LIMIT : FREE_CALL_LIMIT;
-      const wordLimit = isAnon ? ANON_WORD_LIMIT : FREE_WORD_LIMIT;
-
-      if (profile.api_calls_used >= callLimit) {
+      if (profile.api_calls_used >= FREE_CALL_LIMIT) {
         return json({
           error: 'limit_exceeded',
           reason: 'calls',
           callsUsed: profile.api_calls_used,
-          callsLimit: callLimit,
+          callsLimit: FREE_CALL_LIMIT,
           wordsUsed: profile.words_used,
-          wordsLimit: wordLimit,
+          wordsLimit: FREE_WORD_LIMIT,
           plan: 'free',
-          isAnonymous: isAnon,
         }, 429);
       }
-      if (profile.words_used + wordCount > wordLimit) {
+      if (profile.words_used + wordCount > FREE_WORD_LIMIT) {
         return json({
           error: 'limit_exceeded',
           reason: 'words',
           callsUsed: profile.api_calls_used,
-          callsLimit: callLimit,
+          callsLimit: FREE_CALL_LIMIT,
           wordsUsed: profile.words_used,
-          wordsLimit: wordLimit,
+          wordsLimit: FREE_WORD_LIMIT,
           plan: 'free',
-          isAnonymous: isAnon,
         }, 429);
       }
     }
@@ -164,7 +136,6 @@ Deno.serve(async (req) => {
   }
 });
 
-// ── System prompt builder ─────────────────────────────────────
 function buildSystemPrompt(
   operation: string,
   features: Set<string>,
@@ -193,7 +164,6 @@ function buildSystemPrompt(
     return lines.join('\n');
   }
 
-  // 'split' operation
   const hasAnyRestore = features.has('format') || features.has('tables') || features.has('code') || features.has('latex');
   const lines = [
     `You are a highly accurate chat log parser${hasAnyRestore ? ' and markdown restorer' : ''}.`,

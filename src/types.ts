@@ -15,3 +15,12 @@ export interface Turn {
     hasTable: boolean;
     keyPoints: string[];
 }
+
+export interface EnhanceMessage {
+    id: string;
+    type: 'user' | 'system' | 'error';
+    text: string;
+    tokens?: { promptTokens: number; responseTokens: number; totalTokens: number };
+    features?: string[];
+    timestamp: number;
+}

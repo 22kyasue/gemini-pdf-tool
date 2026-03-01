@@ -1,17 +1,19 @@
-import { useState, useMemo, useCallback, useRef, useEffect, useDeferredValue } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect, useDeferredValue } from 'react';
 import {
   FileText, Download, User, Table, Zap,
   GraduationCap,
   Layout, Plus, Trash, Settings, X,
   Sun, Moon, Terminal, Check, FileQuestion,
   Sparkles, Upload, FileDown, Edit3, Eye,
-  BookOpen, RefreshCcw, ChevronDown, LogIn, LogOut, Crown
+  BookOpen, RefreshCcw, ChevronDown, LogIn, LogOut, Crown, Loader, Key, Link2
 } from 'lucide-react';
-import { splitChatWithGemini, enhanceContentWithGemini, generateChatTitle, hasApiKey, getLastApiError, clearLastApiError } from './utils/llmParser';
+import { splitChatWithGemini, enhanceContentWithGemini, generateChatTitle, hasApiKey, hasOwnApiKey, getLastApiError, clearLastApiError } from './utils/llmParser';
+import { toast } from './hooks/useToast';
+import { ToastContainer } from './components/ToastContainer';
 import type { TokenUsage, ApiFeature } from './utils/llmParser';
 
 // -- Types --
-import type { Turn, LLMName } from './types';
+import type { Turn, LLMName, EnhanceMessage } from './types';
 
 interface Source {
   id: string;
@@ -21,6 +23,8 @@ interface Source {
   apiSplitTurns?: Turn[];
   apiSplitRawText?: string;
   apiSplitTokens?: TokenUsage;
+  enhanceHistory?: EnhanceMessage[];
+  enhanceCount?: number;
 }
 
 // -- Utils --
@@ -36,9 +40,14 @@ import { PdfPrintHeader } from './components/PdfPrintHeader';
 import { _onRenderError } from './components/ErrorBoundary';
 import { useTranslation } from './hooks/useTranslation';
 import { useAuth } from './hooks/useAuth';
-import { useUsage, FREE_CALL_LIMIT, FREE_WORD_LIMIT } from './hooks/useUsage';
+import { useUsage, FREE_CALL_LIMIT, FREE_WORD_LIMIT, ANON_CALL_LIMIT, ANON_WORD_LIMIT } from './hooks/useUsage';
 import { AuthModal } from './components/AuthModal';
 import { UpgradeModal } from './components/UpgradeModal';
+import { SignInPromptModal } from './components/SignInPromptModal';
+import { EnhanceThread } from './components/EnhanceThread';
+import { ShareLinkBar } from './components/ShareLinkBar';
+import { looksLikeShareUrl } from './utils/shareImport';
+import { exportSharePdf } from './utils/exportSharePdf';
 
 // -- Markdown export utility --
 function generateMarkdown(turns: Turn[], llm: string): string {
@@ -55,6 +64,12 @@ function generateMarkdown(turns: Turn[], llm: string): string {
 const LS_SOURCES = 'draft_sources';
 const LS_ACTIVE = 'draft_activeSourceId';
 const LS_TEMPLATE = 'draft_pdfTemplate';
+
+// One-time cleanup: remove the old revoked API key from localStorage
+const OLD_REVOKED_KEY = 'AIzaSyBIOqIAjDuOJ-2pyJ2T6KDsmB7xCx13EhE';
+if (localStorage.getItem('googleApiKey') === OLD_REVOKED_KEY) {
+  localStorage.removeItem('googleApiKey');
+}
 
 const SAMPLE = `あなたのプロンプト
 Gemini, can you analyze the Q3 growth projection for our green tech sector? I need a breakdown of the efficiency gains.
@@ -85,18 +100,24 @@ export default function App() {
   const { lang, toggleLang, t } = useTranslation();
 
   // -- Auth & Usage --
-  const { user, signInWithGoogle, signInWithEmail, signUp, signOut } = useAuth();
-  const { plan, callsUsed, wordsUsed, isOverLimit, refresh: refreshUsage } = useUsage(user);
+  const { user, isAnonymous, signInWithGoogle, signInWithEmail, signUp, signOut } = useAuth();
+  const { plan, callsUsed, wordsUsed, isOverLimit, daysUntilReset, refresh: refreshUsage } = useUsage(user, isAnonymous);
 
   // hasApiAccess: true if user has own key OR is signed in
   const hasApiAccess = hasApiKey() || !!user;
 
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState<false | 'limit' | 'voluntary'>(false);
+  const [showSignInPrompt, setShowSignInPrompt] = useState(false);
+  const [showProSwitchConfirm, setShowProSwitchConfirm] = useState(false);
+  const [showShareBar, setShowShareBar] = useState(false);
+  const [shareBarInitialUrl, setShareBarInitialUrl] = useState('');
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+  const avatarMenuRef = useRef<HTMLDivElement>(null);
 
   // Show upgrade modal immediately if limit is reached and no own key
   useEffect(() => {
-    if (isOverLimit && !hasApiKey() && user) {
+    if (isOverLimit && !hasOwnApiKey() && user) {
       // Don't auto-show; let the user trigger it by attempting an action
     }
   }, [isOverLimit, user]);
@@ -121,8 +142,52 @@ export default function App() {
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [parseErrorToast, setParseErrorToast] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsClosing, setSettingsClosing] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'account' | 'apikey'>('account');
+  const settingsBodyRef = useRef<HTMLDivElement>(null);
+  const settingsAccountRef = useRef<HTMLDivElement>(null);
+  const settingsApikeyRef = useRef<HTMLDivElement>(null);
+
+  // Capture body height BEFORE React re-renders (in the click handler)
+  const settingsFromH = useRef(0);
+  const switchSettingsTab = useCallback((tab: 'account' | 'apikey') => {
+    if (settingsBodyRef.current) {
+      settingsFromH.current = settingsBodyRef.current.offsetHeight;
+    }
+    setSettingsTab(tab);
+  }, []);
+
+  // Animate height after React commits the new DOM
+  useLayoutEffect(() => {
+    const body = settingsBodyRef.current;
+    const fromH = settingsFromH.current;
+    if (!body || !fromH) return;
+    // body.scrollHeight is now the natural height with the new active panel
+    const targetH = body.scrollHeight;
+    if (fromH === targetH) { settingsFromH.current = 0; return; }
+    // Freeze at old height
+    body.style.transition = 'none';
+    body.style.height = fromH + 'px';
+    body.style.overflow = 'hidden';
+    settingsFromH.current = 0;
+    // Double-rAF: first commits the frozen frame, second starts the animation
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      body.style.transition = 'height 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
+      body.style.height = targetH + 'px';
+    }));
+    const timer = setTimeout(() => {
+      body.style.height = '';
+      body.style.transition = '';
+      body.style.overflow = '';
+    }, 370);
+    return () => clearTimeout(timer);
+  }, [settingsTab]);
+
+  const closeSettings = useCallback(() => {
+    setSettingsClosing(true);
+    setTimeout(() => { setShowSettings(false); setSettingsClosing(false); }, 200);
+  }, []);
   const [showConsole, setShowConsole] = useState(false);
   const [googleApiKey, setGoogleApiKey] = useState(() => localStorage.getItem('googleApiKey') || '');
   const [apiTestResult, setApiTestResult] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
@@ -187,6 +252,18 @@ export default function App() {
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
+  // -- Avatar dropdown: close on outside click --
+  useEffect(() => {
+    if (!showAvatarMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (avatarMenuRef.current && !avatarMenuRef.current.contains(e.target as Node)) {
+        setShowAvatarMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showAvatarMenu]);
+
   // -- Auto-save drafts --
   useEffect(() => {
     localStorage.setItem(LS_SOURCES, JSON.stringify(sources));
@@ -223,6 +300,7 @@ export default function App() {
       reader.onload = () => {
         const text = reader.result as string;
         setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: text } : s));
+        toast('success', `File loaded: ${file.name}`);
       };
       reader.readAsText(file);
     }
@@ -254,17 +332,14 @@ export default function App() {
   const activeSource = sources.find(s => s.id === activeSourceId) || sources[0];
 
   const INPUT_CHAR_LIMIT = 500_000;
-  const [inputWarning, setInputWarning] = useState<string | null>(null);
 
   const handleUpdateSourceContent = (val: string) => {
     if (val.length > INPUT_CHAR_LIMIT) {
-      setInputWarning(`Input truncated to ${(INPUT_CHAR_LIMIT / 1000).toFixed(0)}K characters to prevent performance issues.`);
+      toast('info', `Input truncated to ${(INPUT_CHAR_LIMIT / 1000).toFixed(0)}K characters to prevent performance issues.`);
       const truncated = val.slice(0, INPUT_CHAR_LIMIT);
       setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: truncated } : s));
-      setTimeout(() => setInputWarning(null), 4000);
       return;
     }
-    setInputWarning(null);
     setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: val } : s));
   };
 
@@ -325,8 +400,7 @@ export default function App() {
   }, [activeSource.content, activeSource.title, activeSourceId, googleApiKey, user]);
 
   const showParseError = useCallback(() => {
-    setParseErrorToast(true);
-    setTimeout(() => setParseErrorToast(false), 2500);
+    toast('error', 'Render error detected');
   }, []);
 
   const previewRef = useRef<HTMLDivElement>(null);
@@ -353,7 +427,7 @@ export default function App() {
 
   const [isClassifying, setIsClassifying] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [customInstructions, setCustomInstructions] = useState('');
+  const [splitInstructions, setSplitInstructions] = useState('');
   const apiRequestIdRef = useRef(0);
 
   // Clear errors when changing tabs or keys
@@ -367,8 +441,12 @@ export default function App() {
     if (!hasApiAccess || !rawText.trim()) return;
 
     // Client-side paywall check (no own key + free limit reached)
-    if (!hasApiKey() && isOverLimit) {
-      setShowUpgradeModal(true);
+    if (!hasOwnApiKey() && isOverLimit) {
+      if (isAnonymous) {
+        setShowSignInPrompt(true);
+      } else {
+        setShowUpgradeModal('limit');
+      }
       return;
     }
 
@@ -404,13 +482,16 @@ export default function App() {
           apiSplitTokens: result.tokens
         } : s));
         setApiError(null);
-        if (!hasApiKey()) refreshUsage();
+        if (!hasOwnApiKey()) refreshUsage();
       } else {
         const err = getLastApiError();
         if (err) {
           setApiError(err.message);
-          if (err.message.startsWith('LIMIT_EXCEEDED:')) {
-            setShowUpgradeModal(true);
+          if (err.message.startsWith('ANON_LIMIT_EXCEEDED:')) {
+            setShowSignInPrompt(true);
+            refreshUsage();
+          } else if (err.message.startsWith('LIMIT_EXCEEDED:')) {
+            setShowUpgradeModal('limit');
             refreshUsage();
           }
         }
@@ -422,13 +503,18 @@ export default function App() {
     }).finally(() => {
       if (requestId === apiRequestIdRef.current) setIsClassifying(false);
     });
-  }, [apiFeatures, hasApiAccess, isOverLimit, refreshUsage]);
+  }, [apiFeatures, hasApiAccess, isOverLimit, isAnonymous, refreshUsage]);
 
   // Handle Automatic logic
+  const [isAutoSplitPending, setIsAutoSplitPending] = useState(false);
   useEffect(() => {
-    if (hasDirectMarkers || !hasApiAccess || !activeSource.content.trim()) return;
+    if (hasDirectMarkers || !hasApiAccess || !activeSource.content.trim()) {
+      setIsAutoSplitPending(false);
+      return;
+    }
 
     if (activeSource.content.length === 0) {
+      setIsAutoSplitPending(false);
       if (activeSource.apiSplitTurns) {
         setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, apiSplitTurns: undefined, apiSplitRawText: undefined } : s));
       }
@@ -436,8 +522,9 @@ export default function App() {
     }
 
     if (!activeSource.apiSplitRawText || !activeSource.apiSplitTurns) {
-      const timer = setTimeout(() => triggerApiSplit(activeSourceId, activeSource.content), 500);
-      return () => clearTimeout(timer);
+      setIsAutoSplitPending(true);
+      const timer = setTimeout(() => { setIsAutoSplitPending(false); triggerApiSplit(activeSourceId, activeSource.content); }, 500);
+      return () => { clearTimeout(timer); setIsAutoSplitPending(false); };
     }
 
     const oldLen = activeSource.apiSplitRawText.length;
@@ -445,9 +532,10 @@ export default function App() {
     const diff = Math.abs(newLen - oldLen) / Math.max(oldLen, 1);
 
     if (diff >= 0.3) {
+      setIsAutoSplitPending(true);
       console.log(`[Flow] Text changed by ${Math.round(diff * 100)}% -> Auto-refreshing API split`);
-      const timer = setTimeout(() => triggerApiSplit(activeSourceId, activeSource.content), 800);
-      return () => clearTimeout(timer);
+      const timer = setTimeout(() => { setIsAutoSplitPending(false); triggerApiSplit(activeSourceId, activeSource.content); }, 800);
+      return () => { clearTimeout(timer); setIsAutoSplitPending(false); };
     }
   }, [activeSource.content, activeSourceId, hasDirectMarkers, hasApiAccess, googleApiKey, user, triggerApiSplit]);
 
@@ -460,22 +548,41 @@ export default function App() {
 
   const hasAnyEnhanceFeature = apiFeatures.has('format') || apiFeatures.has('tables') || apiFeatures.has('code') || apiFeatures.has('latex');
 
-  const handleEnhanceGemini = useCallback(async () => {
+  const handleEnhanceGemini = useCallback(async (instruction?: string) => {
     if (!hasDirectMarkers || parsed.turns.length === 0) return;
 
     // Client-side paywall check
-    if (!hasApiKey() && isOverLimit) {
-      setShowUpgradeModal(true);
+    if (!hasOwnApiKey() && isOverLimit) {
+      if (isAnonymous) {
+        setShowSignInPrompt(true);
+      } else {
+        setShowUpgradeModal('limit');
+      }
       return;
     }
+
+    // Push user message to enhance history
+    const userMsg: EnhanceMessage = {
+      id: crypto.randomUUID(),
+      type: 'user',
+      text: instruction || t.initialEnhancement,
+      timestamp: Date.now(),
+    };
+    setSources(prev => prev.map(s => s.id === activeSourceId ? {
+      ...s,
+      enhanceHistory: [...(s.enhanceHistory ?? []), userMsg],
+    } : s));
 
     enhanceCancelledRef.current = false;
     setIsClassifying(true);
     setApiError(null);
-    console.log(`[Flow] User triggered enhancement for ${parsed.turns.length} Gemini turns...`);
+
+    // Use already-enhanced turns if available, otherwise original parsed turns
+    const baseTurns = overrideTurns ?? parsed.turns;
+    console.log(`[Flow] User triggered enhancement for ${baseTurns.length} turns...`);
 
     try {
-      const assistantTurns = parsed.turns.filter(t => t.role === 'assistant');
+      const assistantTurns = baseTurns.filter(t => t.role === 'assistant');
       if (assistantTurns.length === 0) {
         setIsClassifying(false);
         return;
@@ -483,6 +590,7 @@ export default function App() {
 
       let totalTokens: TokenUsage = { promptTokens: 0, responseTokens: 0, totalTokens: 0 };
       const enhancedMap = new Map<number, string>();
+      let hitLimit = false;
 
       for (const turn of assistantTurns) {
         if (enhanceCancelledRef.current) {
@@ -491,7 +599,7 @@ export default function App() {
         }
         console.log(`[Flow] Enhancing turn ${turn.index} (${turn.content.length} chars)...`);
         const wc = turn.content.split(/\s+/).length;
-        const result = await enhanceContentWithGemini(turn.content, apiFeatures, customInstructions, wc);
+        const result = await enhanceContentWithGemini(turn.content, apiFeatures, instruction, wc);
         if (result) {
           enhancedMap.set(turn.index, result.text);
           totalTokens = {
@@ -502,44 +610,84 @@ export default function App() {
         } else {
           // Check if we hit the limit mid-loop
           const err = getLastApiError();
-          if (err?.message.startsWith('LIMIT_EXCEEDED:')) {
-            setShowUpgradeModal(true);
+          if (err?.message.startsWith('ANON_LIMIT_EXCEEDED:')) {
+            hitLimit = true;
+            setShowSignInPrompt(true);
+            refreshUsage();
+            break;
+          } else if (err?.message.startsWith('LIMIT_EXCEEDED:')) {
+            hitLimit = true;
+            setShowUpgradeModal('limit');
             refreshUsage();
             break;
           }
         }
       }
 
-      if (enhancedMap.size > 0 && !enhanceCancelledRef.current) {
-        const enhanced: Turn[] = parsed.turns.map(t => {
+      if (enhancedMap.size > 0) {
+        const enhanced: Turn[] = baseTurns.map(t => {
           const newContent = enhancedMap.get(t.index);
           if (newContent) {
             return { ...t, content: newContent, hasTable: /\|.*\|/.test(newContent) };
           }
           return t;
         });
+        const featureList = [...apiFeatures].filter(f => f !== 'split');
+        const label = enhanceCancelledRef.current
+          ? `Partially enhanced ${enhancedMap.size}/${assistantTurns.length} turn${assistantTurns.length !== 1 ? 's' : ''} (cancelled)`
+          : hitLimit
+            ? `Enhanced ${enhancedMap.size}/${assistantTurns.length} turn${assistantTurns.length !== 1 ? 's' : ''} (limit reached)`
+            : `Enhanced ${enhancedMap.size} assistant turn${enhancedMap.size !== 1 ? 's' : ''}`;
+        const systemMsg: EnhanceMessage = {
+          id: crypto.randomUUID(),
+          type: hitLimit ? 'error' : 'system',
+          text: label,
+          tokens: totalTokens,
+          features: featureList,
+          timestamp: Date.now(),
+        };
         setSources(prev => prev.map(s => s.id === activeSourceId ? {
           ...s,
           apiSplitTurns: enhanced,
-          apiSplitTokens: totalTokens
+          apiSplitTokens: totalTokens,
+          enhanceHistory: [...(s.enhanceHistory ?? []), systemMsg],
+          enhanceCount: (s.enhanceCount ?? 0) + 1,
         } : s));
         console.log(`[Gemini] SUCCESS — enhanced ${enhancedMap.size} turns, tokens: ${totalTokens.promptTokens} in + ${totalTokens.responseTokens} out = ${totalTokens.totalTokens} total`);
-        if (!hasApiKey()) refreshUsage();
+        if (!hasOwnApiKey()) refreshUsage();
+      } else if (enhanceCancelledRef.current) {
+        const cancelMsg: EnhanceMessage = {
+          id: crypto.randomUUID(), type: 'error',
+          text: 'Enhancement cancelled before any turns were processed',
+          timestamp: Date.now(),
+        };
+        setSources(prev => prev.map(s => s.id === activeSourceId ? {
+          ...s, enhanceHistory: [...(s.enhanceHistory ?? []), cancelMsg],
+        } : s));
       }
     } catch (err) {
       console.error('[Flow] Enhancement failed:', err);
       const apiErr = getLastApiError();
-      if (apiErr) setApiError(apiErr.message);
+      const errorMsg: EnhanceMessage = {
+        id: crypto.randomUUID(),
+        type: 'error',
+        text: apiErr?.message || String(err),
+        timestamp: Date.now(),
+      };
+      setSources(prev => prev.map(s => s.id === activeSourceId ? {
+        ...s,
+        enhanceHistory: [...(s.enhanceHistory ?? []), errorMsg],
+      } : s));
     } finally {
       setIsClassifying(false);
     }
-  }, [hasDirectMarkers, parsed.turns, apiFeatures, customInstructions, isOverLimit, refreshUsage, activeSourceId]);
+  }, [hasDirectMarkers, parsed.turns, overrideTurns, apiFeatures, isOverLimit, isAnonymous, refreshUsage, activeSourceId]);
 
   const handleManualApiRetry = () => {
     if (hasDirectMarkers) {
       handleEnhanceGemini();
     } else {
-      triggerApiSplit(activeSourceId, activeSource.content, customInstructions);
+      triggerApiSplit(activeSourceId, activeSource.content, splitInstructions);
     }
   };
 
@@ -566,11 +714,9 @@ export default function App() {
     return snippet ? `${llmTag} - ${snippet} (${date})` : `${llmTag} Chat (${date})`;
   }, [currentTurns, selectedLLM]);
 
-  const [pdfError, setPdfError] = useState<string | null>(null);
   const handleExportPdf = async () => {
     setExporting(true);
     setIsPdfExporting(true);
-    setPdfError(null);
     const wordCount = (activeSource.content.match(/\S+/g) || []).length;
     const renderDelay = wordCount > 30000 ? 3000 : wordCount > 15000 ? 2000 : 800;
     await new Promise(r => setTimeout(r, renderDelay));
@@ -581,8 +727,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('[Flow] PDF export failed:', err);
-      setPdfError(err instanceof Error ? err.message : 'PDF generation failed');
-      setTimeout(() => setPdfError(null), 5000);
+      toast('error', err instanceof Error ? err.message : 'PDF generation failed');
     } finally {
       setIsPdfExporting(false);
       setExporting(false);
@@ -653,19 +798,28 @@ export default function App() {
     reader.onload = () => {
       const text = reader.result as string;
       setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: text } : s));
+      toast('success', `File loaded: ${file.name}`);
     };
     reader.readAsText(file);
     e.target.value = '';
   }, [activeSourceId]);
 
-  // Handle checkout redirect result
+  // Handle checkout redirect result — retry because the Stripe webhook
+  // may not have updated the profile by the time the user is redirected back.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('checkout') === 'success') {
-      refreshUsage();
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, [refreshUsage]);
+    if (params.get('checkout') !== 'success') return;
+    window.history.replaceState({}, '', window.location.pathname);
+
+    let attempts = 0;
+    const poll = async () => {
+      const currentPlan = await refreshUsage();
+      attempts++;
+      if (currentPlan === 'pro' || attempts >= 15) return;
+      setTimeout(poll, 2000);
+    };
+    poll();
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -678,80 +832,125 @@ export default function App() {
       <header className="app-header">
         <div className="brand">
           <div className="brand-logo"><FileText size={20} /></div>
-          <div className="brand-text">{t.appTitle} <span className="beta-tag">PRO</span></div>
-        </div>
-
-        <div className="header-stats no-print">
-          <div className="stat-item"><User size={12} /><span>{currentTurns.filter(t => t.role === 'user').length}</span></div>
-          <div className="stat-item"><Table size={12} /><span>{currentTurns.filter(t => t.hasTable).length}</span></div>
+          <div className="brand-text">{t.appTitle}{plan === 'pro' && <span className="beta-tag">PRO</span>}</div>
         </div>
 
         <div className="header-actions">
-          <div className={`split-method-badge no-print desktop-only ${splitMethod !== 'none' ? 'active' : ''}`}>
-            {splitMethod === 'regex' && t.regexMode}
-            {splitMethod === 'gemini-api' && t.geminiApiMode}
-            {splitMethod === 'none' && (hasApiAccess ? t.readyMode : t.noApiKeyMode)}
+          {/* Group 1: Login/avatar + Settings */}
+          <div className="header-group">
+            {user && !isAnonymous ? (
+              <div className="avatar-menu-wrapper" ref={avatarMenuRef}>
+                <button
+                  className={`user-avatar no-print${plan === 'pro' ? ' user-avatar--pro' : ''}`}
+                  onClick={() => setShowAvatarMenu(v => !v)}
+                  aria-label="Account menu"
+                  aria-expanded={showAvatarMenu}
+                >
+                  {user.user_metadata?.avatar_url ? (
+                    <img src={user.user_metadata.avatar_url} alt="" className="user-avatar-img" referrerPolicy="no-referrer" />
+                  ) : (
+                    (user.email?.[0] ?? 'U').toUpperCase()
+                  )}
+                  {plan === 'pro' && <span className="user-avatar-pro-badge"><Crown size={8} /></span>}
+                </button>
+                {showAvatarMenu && (
+                  <div className="avatar-dropdown">
+                    <div className="avatar-dropdown-header">
+                      <div className="avatar-dropdown-photo">
+                        {user.user_metadata?.avatar_url ? (
+                          <img src={user.user_metadata.avatar_url} alt="" referrerPolicy="no-referrer" />
+                        ) : (
+                          <span>{(user.email?.[0] ?? 'U').toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="avatar-dropdown-email">{user.user_metadata?.full_name || user.email}</div>
+                        <div className="avatar-dropdown-plan">
+                          {plan === 'pro'
+                            ? <><Crown size={12} style={{ color: '#f59e0b' }} /> {t.proPlan}</>
+                            : <>{t.freePlan}</>
+                          }
+                        </div>
+                      </div>
+                    </div>
+                    <hr className="avatar-dropdown-divider" />
+                    <button className="avatar-dropdown-item" onClick={() => { setShowAvatarMenu(false); setApiKeyDraft(googleApiKey); setSettingsTab('account'); setShowSettings(true); }}>
+                      <Settings size={13} /> {t.settingsTitle.replace(/ v[\d.]+/, '')}
+                    </button>
+                    <button className="avatar-dropdown-item avatar-dropdown-signout" onClick={() => { setShowAvatarMenu(false); signOut(); }}>
+                      <LogOut size={13} /> {t.signOut}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                className="btn btn-ghost no-print"
+                style={{ fontSize: '0.8rem', gap: 5, fontWeight: 600 }}
+                onClick={() => setShowAuthModal(true)}
+                aria-label="Sign in"
+              >
+                <LogIn size={14} /> {t.signIn}
+              </button>
+            )}
+            <button onClick={() => { setApiKeyDraft(googleApiKey); setSettingsTab('account'); setShowSettings(true); }} className={`btn btn-ghost no-print relative ${!hasApiAccess ? 'btn-attention' : ''}`} data-tooltip={t.settingsTooltip} aria-label="Open settings">
+              <Settings size={15} />
+              {!hasApiAccess && <span className="attention-dot" />}
+            </button>
           </div>
-          <div className="template-selector no-print desktop-only">
-            <button onClick={() => setPdfTemplate('professional')} className={`template-btn ${pdfTemplate === 'professional' ? 'active' : ''}`} data-tooltip={t.proTemplate} aria-label="Professional template"><Layout size={14} /></button>
-            <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`} data-tooltip={t.academicTemplate} aria-label="Academic template"><GraduationCap size={14} /></button>
-            <button onClick={() => setPdfTemplate('cyber')} className={`template-btn ${pdfTemplate === 'cyber' ? 'active' : ''}`} data-tooltip={t.cyberTemplate} aria-label="Cyber template"><Zap size={14} /></button>
-          </div>
-          <button onClick={toggleLang} className="theme-toggle no-print" data-tooltip={lang === 'en' ? t.switchToJapanese : t.switchToEnglish}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{lang === 'en' ? 'JP' : 'EN'}</span>
-          </button>
-          <button onClick={toggleTheme} className="theme-toggle no-print" data-tooltip={theme === 'dark' ? t.switchToLightMode : t.switchToDarkMode} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-          <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print desktop-only ${showConsole ? 'active' : ''}`} data-tooltip={t.apiConsole} aria-label="Toggle API console">
-            <Terminal size={15} />
-          </button>
-          {/* User avatar / sign-in button */}
-          {user ? (
-            <button
-              className="user-avatar no-print"
-              onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }}
-              data-tooltip={user.email ?? 'Account'}
-              aria-label="Account settings"
-            >
-              {(user.email?.[0] ?? 'U').toUpperCase()}
-            </button>
-          ) : (
-            <button
-              className="btn btn-ghost no-print"
-              style={{ fontSize: '0.8rem', gap: 5, fontWeight: 600 }}
-              onClick={() => setShowAuthModal(true)}
-              aria-label="Sign in"
-            >
-              <LogIn size={14} /> Sign in
-            </button>
-          )}
-          <button onClick={() => { setApiKeyDraft(googleApiKey); setShowSettings(true); }} className={`btn btn-ghost no-print relative ${!hasApiAccess ? 'btn-attention' : ''}`} data-tooltip={t.settingsTooltip} aria-label="Open settings">
-            <Settings size={15} />
-            {!hasApiAccess && <span className="attention-dot" />}
-          </button>
-          <div className="export-dropdown no-print desktop-only">
-            <button className="btn btn-ghost" data-tooltip="Export Options" aria-label="Export Menu">
-              <Download size={15} /> <ChevronDown size={12} style={{ marginLeft: 2, marginRight: -2, opacity: 0.6 }} />
-            </button>
-            <div className="export-menu">
-              <button onClick={handleExportMarkdown} className="btn btn-ghost" aria-label="Export as Markdown">
-                <FileDown size={14} /> Markdown
-              </button>
-              <button onClick={handleExportJSON} className="btn btn-ghost" aria-label="Export as JSON">
-                <FileText size={14} /> JSON
-              </button>
-              <button onClick={handleExportHTML} className="btn btn-ghost" aria-label="Export as HTML">
-                <Layout size={14} /> HTML
-              </button>
+
+          {/* Group 2: Split badge + Templates */}
+          <div className="header-group desktop-only">
+            <div className={`split-method-badge no-print ${splitMethod !== 'none' ? 'active' : ''}`}>
+              {splitMethod === 'regex' && t.regexMode}
+              {splitMethod === 'gemini-api' && t.geminiApiMode}
+              {splitMethod === 'none' && (hasApiAccess ? t.readyMode : t.noApiKeyMode)}
+            </div>
+            <div className="template-selector no-print">
+              <button onClick={() => setPdfTemplate('professional')} className={`template-btn ${pdfTemplate === 'professional' ? 'active' : ''}`} data-tooltip={t.proTemplate} aria-label="Professional template"><Layout size={14} /></button>
+              <button onClick={() => setPdfTemplate('academic')} className={`template-btn ${pdfTemplate === 'academic' ? 'active' : ''}`} data-tooltip={t.academicTemplate} aria-label="Academic template"><GraduationCap size={14} /></button>
+              <button onClick={() => setPdfTemplate('cyber')} className={`template-btn ${pdfTemplate === 'cyber' ? 'active' : ''}`} data-tooltip={t.cyberTemplate} aria-label="Cyber template"><Zap size={14} /></button>
             </div>
           </div>
-          <button onClick={handleExportNotebookLM} className="btn btn-ghost no-print desktop-only" data-tooltip={t.sendToNotebookLM} aria-label="Upload to NotebookLM">
-            {isExportingNotebookLM ? <Check size={15} color="#10b981" /> : <BookOpen size={15} />}
-          </button>
-          <button onClick={handleExportPdf} disabled={exporting} className="btn btn-primary" data-tooltip={t.exportPdf} aria-label="Export PDF">
-            <Download size={15} /> {exporting ? 'Generating...' : 'PDF'}
-          </button>
+
+          {/* Group 3: Lang/theme toggles */}
+          <div className="header-group">
+            <button onClick={toggleLang} className="theme-toggle no-print" data-tooltip={lang === 'en' ? t.switchToJapanese : t.switchToEnglish}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{lang === 'en' ? 'JP' : 'EN'}</span>
+            </button>
+            <button onClick={toggleTheme} className="theme-toggle no-print" data-tooltip={theme === 'dark' ? t.switchToLightMode : t.switchToDarkMode} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button onClick={() => setShowConsole(c => !c)} className={`btn btn-ghost no-print desktop-only ${showConsole ? 'active' : ''}`} data-tooltip={t.apiConsole} aria-label="Toggle API console">
+              <Terminal size={15} />
+            </button>
+          </div>
+
+          {/* Group 4: Export actions */}
+          <div className="header-group">
+            <div className="export-dropdown no-print desktop-only">
+              <button className="btn btn-ghost" data-tooltip="Export Options" aria-label="Export Menu">
+                <Download size={15} /> <ChevronDown size={12} style={{ marginLeft: 2, marginRight: -2, opacity: 0.6 }} />
+              </button>
+              <div className="export-menu">
+                <button onClick={handleExportMarkdown} className="btn btn-ghost" aria-label="Export as Markdown">
+                  <FileDown size={14} /> Markdown
+                </button>
+                <button onClick={handleExportJSON} className="btn btn-ghost" aria-label="Export as JSON">
+                  <FileText size={14} /> JSON
+                </button>
+                <button onClick={handleExportHTML} className="btn btn-ghost" aria-label="Export as HTML">
+                  <Layout size={14} /> HTML
+                </button>
+              </div>
+            </div>
+            <button onClick={handleExportNotebookLM} className="btn btn-ghost no-print desktop-only" data-tooltip={t.sendToNotebookLM} aria-label="Upload to NotebookLM">
+              {isExportingNotebookLM ? <Check size={15} color="#10b981" /> : <BookOpen size={15} />}
+            </button>
+            <button onClick={handleExportPdf} disabled={exporting} className="btn btn-primary" data-tooltip={t.exportPdf} aria-label="Export PDF">
+              <Download size={15} /> {exporting ? t.generating : 'PDF'}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -803,11 +1002,50 @@ export default function App() {
         <section className={`panel panel-left ${mobileTab !== 'editor' ? 'mobile-hidden' : ''}`}>
           <div className="panel-header">
             <span className="panel-title">{t.editor}: {activeSource.title}</span>
+            {isAutoSplitPending && <Loader size={14} className="auto-split-pending" />}
             <button className="btn btn-ghost upload-btn no-print" onClick={() => fileInputRef.current?.click()} title="Upload text file" aria-label="Upload text file">
               <Upload size={13} />
             </button>
+            <button className={`share-import-btn no-print${showShareBar ? ' active' : ''}`} onClick={() => { setShareBarInitialUrl(''); setShowShareBar(v => !v); }} title={t.shareImport} aria-label={t.shareImport}>
+              <Link2 size={12} /> <span className="share-import-btn-label">{t.shareImport}</span>
+            </button>
             <input ref={fileInputRef} type="file" accept=".txt,.md,.text" onChange={handleFileUpload} style={{ display: 'none' }} />
           </div>
+          {showShareBar && (
+            <ShareLinkBar
+              initialUrl={shareBarInitialUrl}
+              onImport={(title, text, platform) => {
+                const llm = platform === 'ChatGPT' ? 'ChatGPT' : platform === 'Gemini' ? 'Gemini' : 'AI';
+                setSources(prev => prev.map(s => s.id === activeSourceId ? {
+                  ...s,
+                  title,
+                  content: text,
+                  llm: llm as import('./types').LLMName,
+                  apiSplitTurns: undefined,
+                  apiSplitRawText: undefined,
+                  enhanceHistory: undefined,
+                  enhanceCount: undefined,
+                } : s));
+                setShowShareBar(false);
+              }}
+              onDirectPdf={async (title, turns, platform, sourceUrl) => {
+                setExporting(true);
+                toast('info', 'Generating PDF...', 3000);
+                try {
+                  await exportSharePdf(title, turns, platform, sourceUrl);
+                  toast('success', 'PDF downloaded!', 3000);
+                } catch (err) {
+                  console.error('[SharePDF]', err);
+                  toast('error', 'PDF generation failed');
+                } finally {
+                  setExporting(false);
+                }
+                setShowShareBar(false);
+              }}
+              onClose={() => setShowShareBar(false)}
+              t={t}
+            />
+          )}
           <LLMSelector
             detected={detectedLLM}
           />
@@ -847,18 +1085,22 @@ export default function App() {
             </button>
 
             {/* Usage counter for authenticated free-tier users */}
-            {user && !hasApiKey() && plan === 'free' && (
+            {user && !hasOwnApiKey() && plan === 'free' && (
               <div className="usage-counter no-print" style={{
                 marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
                 fontSize: '0.7rem', color: isOverLimit ? '#dc2626' : 'var(--text-tertiary)',
                 fontWeight: isOverLimit ? 700 : 400,
               }}>
-                <span>{callsUsed}/{FREE_CALL_LIMIT} calls</span>
+                <span>{callsUsed}/{isAnonymous ? ANON_CALL_LIMIT : FREE_CALL_LIMIT} {t.calls}</span>
                 {isOverLimit
-                  ? <button className="btn btn-primary" style={{ fontSize: '0.65rem', padding: '2px 8px', gap: 4 }} onClick={() => setShowUpgradeModal(true)}>
-                    <Crown size={10} /> Upgrade
-                  </button>
-                  : <span style={{ opacity: 0.7 }}>· {(wordsUsed / 1000).toFixed(0)}k/{FREE_WORD_LIMIT / 1000}k words</span>
+                  ? isAnonymous
+                    ? <button className="btn btn-primary" style={{ fontSize: '0.65rem', padding: '2px 8px', gap: 4 }} onClick={() => setShowAuthModal(true)}>
+                      <LogIn size={10} /> {t.signInFree}
+                    </button>
+                    : <button className="btn btn-primary" style={{ fontSize: '0.65rem', padding: '2px 8px', gap: 4 }} onClick={() => setShowUpgradeModal('voluntary')}>
+                      <Crown size={10} /> {t.upgrade}
+                    </button>
+                  : !isAnonymous && <span style={{ opacity: 0.7 }}>· {(wordsUsed / 1000).toFixed(0)}k/{FREE_WORD_LIMIT / 1000}k {t.words}</span>
                 }
               </div>
             )}
@@ -866,22 +1108,26 @@ export default function App() {
             {/* Enhance button for direct-marker chats */}
             {hasDirectMarkers && hasApiAccess && !overrideTurns && !isClassifying && hasAnyEnhanceFeature && (
               <button
-                className="btn btn-ghost no-print"
-                style={{ marginLeft: 'auto', fontSize: '0.7rem', gap: 4, color: 'var(--color-primary-500)', fontWeight: 600 }}
-                onClick={handleEnhanceGemini}
+                className="enhance-btn no-print"
+                onClick={() => handleEnhanceGemini()}
               >
-                <Sparkles size={11} /> Enhance formatting
+                <Sparkles size={12} /> {t.enhanceBtn}
               </button>
             )}
+            {hasDirectMarkers && hasApiAccess && !overrideTurns && !isClassifying && hasAnyEnhanceFeature && (
+              <div className="enhance-hint no-print">
+                <Sparkles size={10} /> <span dangerouslySetInnerHTML={{ __html: t.enhanceHint }} />
+              </div>
+            )}
 
-            {/* Sign in prompt for unauthenticated users without own key */}
-            {!hasApiAccess && (
+            {/* Sign in prompt for anonymous users without own key */}
+            {isAnonymous && !hasOwnApiKey() && (
               <button
                 className="btn btn-ghost no-print"
                 style={{ marginLeft: 'auto', fontSize: '0.7rem', gap: 4, color: 'var(--color-primary-500)' }}
                 onClick={() => setShowAuthModal(true)}
               >
-                <LogIn size={11} /> Sign in for AI
+                <LogIn size={11} /> {t.signInForMore}
               </button>
             )}
           </div>
@@ -889,6 +1135,14 @@ export default function App() {
             className="editor-textarea"
             value={activeSource.content}
             onChange={e => handleUpdateSourceContent(e.target.value)}
+            onPaste={e => {
+              const pasted = e.clipboardData.getData('text');
+              if (looksLikeShareUrl(pasted)) {
+                e.preventDefault();
+                setShareBarInitialUrl(pasted.trim());
+                setShowShareBar(true);
+              }
+            }}
             placeholder={t.pasteLogHere}
             spellCheck={false}
           />
@@ -905,7 +1159,7 @@ export default function App() {
                 <TableOfContents turns={currentTurns} isPdfMode={true} />
               </div>
 
-              {isClassifying && (
+              {isClassifying && !(hasDirectMarkers && overrideTurns) && (
                 <div className="classifying-banner no-print" role="status" aria-live="polite">
                   <Zap size={14} className="animate-pulse" />
                   <span>{t.processingApi}</span>
@@ -924,24 +1178,29 @@ export default function App() {
                         ? 'no-key'
                         : 'generic';
                 const labels: Record<string, { title: string; cls: string }> = {
-                  'rate-limit': { title: 'Rate Limit', cls: 'api-error-banner--rate-limit' },
-                  'auth': { title: 'Auth Error', cls: 'api-error-banner--auth' },
-                  'network': { title: 'Network Error', cls: 'api-error-banner--network' },
-                  'no-key': { title: 'Sign in Required', cls: 'api-error-banner--no-key' },
-                  'generic': { title: 'API Error', cls: '' },
+                  'rate-limit': { title: t.rateLimitTitle, cls: 'api-error-banner--rate-limit' },
+                  'auth': { title: t.authErrorTitle, cls: 'api-error-banner--auth' },
+                  'network': { title: t.networkErrorTitle, cls: 'api-error-banner--network' },
+                  'no-key': { title: t.signInRequired, cls: 'api-error-banner--no-key' },
+                  'generic': { title: t.apiErrorTitle, cls: '' },
                 };
                 const { title, cls } = labels[errType];
                 return (
-                  <div className={`api-error-banner ${cls} no-print`}>
+                  <div className={`api-error-banner ${cls} no-print`} role="alert">
                     <span className="api-error-icon">!</span>
                     <div className="api-error-body">
                       <strong>{title}</strong>
-                      <span>{apiError.replace('LIMIT_EXCEEDED: ', '')}</span>
+                      <span>{apiError.replace(/^(ANON_)?LIMIT_EXCEEDED: /, '')}</span>
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       {!hasApiKey() && !user && (
                         <button className="btn btn-primary" style={{ fontSize: '0.7rem', padding: '3px 10px' }} onClick={() => setShowAuthModal(true)}>
-                          <LogIn size={11} /> Sign in
+                          <LogIn size={11} /> {t.signIn}
+                        </button>
+                      )}
+                      {plan === 'pro' && hasOwnApiKey() && (
+                        <button className="btn btn-primary" style={{ fontSize: '0.7rem', padding: '3px 10px' }} onClick={() => setShowProSwitchConfirm(true)}>
+                          <Crown size={11} /> {t.proSwitchToServer}
                         </button>
                       )}
                       <button className="api-error-dismiss" onClick={() => setApiError(null)}>
@@ -967,8 +1226,8 @@ export default function App() {
                     <input
                       type="text"
                       placeholder={t.whatWasIssue}
-                      value={customInstructions}
-                      onChange={e => setCustomInstructions(e.target.value)}
+                      value={splitInstructions}
+                      onChange={e => setSplitInstructions(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') handleManualApiRetry(); }}
                       className="instruction-input"
                     />
@@ -984,44 +1243,17 @@ export default function App() {
               )}
 
 
-              {!isClassifying && !apiError && overrideTurns && hasDirectMarkers && (
-                <div className="ai-success-banner no-print" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: '12px 16px' }}>
-                  <div className="ai-success-banner-header">
-                    <Sparkles size={14} style={{ flexShrink: 0 }} />
-                    <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{t.aiEnhancementApplied}</span>
-                    {tokenUsage && (
-                      <span className="token-usage">
-                        {tokenUsage.promptTokens.toLocaleString()} in · {tokenUsage.responseTokens.toLocaleString()} out · {tokenUsage.totalTokens.toLocaleString()} tok
-                      </span>
-                    )}
-                    <div className="ai-success-banner-chips">
-                      {(['format', 'tables', 'code', 'latex'] as ApiFeature[]).filter(f => apiFeatures.has(f)).map(f => (
-                        <span key={f} style={{
-                          fontSize: '0.65rem', fontWeight: 600, padding: '2px 7px',
-                          background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)',
-                          borderRadius: 99, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.04em',
-                        }}>{f}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="sync-retry-row" style={{ marginTop: 0 }}>
-                    <input
-                      type="text"
-                      placeholder="Describe an issue to re-enhance (e.g. 'fix the table formatting')..."
-                      value={customInstructions}
-                      onChange={e => setCustomInstructions(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleManualApiRetry(); }}
-                      className="instruction-input"
-                    />
-                    <button
-                      className="sync-banner-btn"
-                      onClick={handleManualApiRetry}
-                      title="Re-enhance with AI"
-                    >
-                      <RefreshCcw size={13} /> Re-enhance
-                    </button>
-                  </div>
-                </div>
+              {overrideTurns && hasDirectMarkers && (
+                <EnhanceThread
+                  key={activeSourceId}
+                  history={activeSource.enhanceHistory ?? []}
+                  enhanceCount={activeSource.enhanceCount ?? 0}
+                  activeFeatures={[...apiFeatures].filter(f => f !== 'split')}
+                  isEnhancing={isClassifying}
+                  onSubmit={(instruction) => handleEnhanceGemini(instruction)}
+                  onCancel={handleCancelEnhance}
+                  t={t}
+                />
               )}
 
               {currentTurns.length > 0 ? (
@@ -1036,25 +1268,55 @@ export default function App() {
                     <div className="empty-state-icon">
                       <FileQuestion size={24} />
                     </div>
-                    <div className="empty-state-text">No turns detected</div>
-                    <div className="empty-state-hint">Paste a chat log in the editor or drop a .txt file</div>
+                    <div className="empty-state-text">{t.noTurnsDetected}</div>
+                    <div className="empty-state-hint">{t.noTurnsHint}</div>
                   </div>
                 </div>
               ) : !isClassifying ? (
                 <div className="messages-list">
                   <div className="welcome-state no-print">
-                    <div className="welcome-icon">
-                      <FileText size={28} />
+                    <div className="welcome-hero-icon">
+                      <FileText size={36} />
                     </div>
-                    <h3 className="welcome-title">Format your AI chat for PDF</h3>
-                    <p className="welcome-sub">Paste a conversation from Gemini, ChatGPT, or Claude in the editor on the left</p>
+                    <h3 className="welcome-title">{t.welcomeTitle}</h3>
+                    <p className="welcome-sub">{t.welcomeSub}</p>
+                    <div className="welcome-steps">
+                      <div className="welcome-step"><span className="welcome-step-num">1</span> {t.welcomeStep1}</div>
+                      <span className="welcome-step-arrow">&rarr;</span>
+                      <div className="welcome-step"><span className="welcome-step-num">2</span> {t.welcomeStep2}</div>
+                      <span className="welcome-step-arrow">&rarr;</span>
+                      <div className="welcome-step"><span className="welcome-step-num">3</span> {t.welcomeStep3}</div>
+                    </div>
                     <div className="welcome-features">
-                      <span className="welcome-feature"><Zap size={12} /> AI formatting</span>
-                      <span className="welcome-feature"><Download size={12} /> PDF export</span>
-                      <span className="welcome-feature"><Table size={12} /> Table support</span>
-                      <span className="welcome-feature"><GraduationCap size={12} /> LaTeX / KaTeX</span>
+                      <div className="welcome-feature-card">
+                        <Zap size={16} />
+                        <div>
+                          <strong>{t.welcomeAiFormatting}</strong>
+                          <span>{t.welcomeAiFormattingDesc}</span>
+                        </div>
+                      </div>
+                      <div className="welcome-feature-card">
+                        <Download size={16} />
+                        <div>
+                          <strong>{t.welcomeExportReady}</strong>
+                          <span>{t.welcomeExportReadyDesc}</span>
+                        </div>
+                      </div>
+                      <div className="welcome-feature-card">
+                        <Sparkles size={16} />
+                        <div>
+                          <strong>{t.welcomeMultiLlm}</strong>
+                          <span>{t.welcomeMultiLlmDesc}</span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="welcome-cta">Or drop a <kbd>.txt</kbd> file anywhere on the page</p>
+                    <button
+                      className="welcome-sample-btn"
+                      onClick={() => setSources(prev => prev.map(s => s.id === activeSourceId ? { ...s, content: SAMPLE } : s))}
+                    >
+                      <Sparkles size={13} /> {t.tryWithSample}
+                    </button>
+                    <p className="welcome-cta" dangerouslySetInnerHTML={{ __html: t.welcomeCta }} />
                   </div>
                 </div>
               ) : null}
@@ -1063,9 +1325,7 @@ export default function App() {
         </section>
       </main>
 
-      {parseErrorToast && <div className="toast-error no-print">⚠ Error</div>}
-      {pdfError && <div className="toast-error no-print">⚠ PDF: {pdfError}</div>}
-      {inputWarning && <div className="toast-error no-print" style={{ background: '#f59e0b', borderColor: '#d97706' }}>⚠ {inputWarning}</div>}
+      <ToastContainer />
 
       {showConsole && (
         <div className="api-console no-print">
@@ -1077,7 +1337,7 @@ export default function App() {
           </div>
           <div className="api-console-body" ref={logScrollRef}>
             {apiLogs.length === 0 && (
-              <div className="api-console-empty">No API activity yet. Paste non-Gemini text to trigger.</div>
+              <div className="api-console-empty">{t.noApiActivity}</div>
             )}
             {apiLogs.map((log, i) => (
               <div key={i} className={`api-console-line api-console-${log.level}`}>
@@ -1104,103 +1364,211 @@ export default function App() {
         <div className="pdf-spinner-overlay no-print" role="status" aria-live="assertive">
           <div className="pdf-spinner-content">
             <div className="pdf-spinner"></div>
-            <span>Generating PDF...</span>
+            <span>{t.generatingPdf}</span>
           </div>
         </div>
       )}
 
       {showSettings && (
-        <div className="modal-overlay no-print" onClick={() => setShowSettings(false)} role="dialog" aria-modal="true" aria-label="Settings">
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <div className={`modal-overlay no-print ${settingsClosing ? 'modal-closing' : ''}`} onClick={closeSettings} role="dialog" aria-modal="true" aria-label="Settings">
+          <div className={`modal-content ${settingsClosing ? 'modal-content-closing' : ''}`} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{t.settingsTitle}</h3>
-              <button className="btn-close" onClick={() => setShowSettings(false)} aria-label="Close settings"><X size={18} /></button>
+              <button className="btn-close" onClick={closeSettings} aria-label="Close settings"><X size={18} /></button>
             </div>
-            <div className="settings-body">
 
-              {/* Account section */}
-              <div className="setting-group" style={{ marginBottom: '20px' }}>
-                <label>Account</label>
-                {user ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {user.email}
+            {/* Settings Tabs */}
+            <div className="settings-tabs">
+              <button className={`settings-tab ${settingsTab === 'account' ? 'active' : ''}`} onClick={() => switchSettingsTab('account')}>
+                <User size={14} /> {t.account}
+              </button>
+              <button className={`settings-tab ${settingsTab === 'apikey' ? 'active' : ''}`} onClick={() => switchSettingsTab('apikey')}>
+                <Key size={14} /> {t.apiKeyTab}
+              </button>
+            </div>
+
+            <div className="settings-body settings-body-animated" ref={settingsBodyRef}>
+              {/* ── Account Tab ── */}
+              <div className={`settings-tab-panel ${settingsTab === 'account' ? 'active' : ''}`} ref={settingsAccountRef}>
+                  <div className="setting-group" style={{ marginBottom: '20px' }}>
+                    <label>{t.account}</label>
+                    {user && !isAnonymous ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {user.email}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                            {plan === 'pro'
+                              ? <><Crown size={11} style={{ color: '#f59e0b' }} /> {t.proPlan}</>
+                              : <>{t.freePlan}</>
+                            }
+                          </div>
+                        </div>
+                        <button className="btn btn-ghost" style={{ fontSize: '0.75rem', gap: 4 }} onClick={async () => { await signOut(); closeSettings(); }}>
+                          <LogOut size={13} /> {t.signOut}
+                        </button>
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                        {plan === 'pro'
-                          ? <><Crown size={11} style={{ color: '#f59e0b' }} /> Pro plan</>
-                          : <><span>{callsUsed}/{FREE_CALL_LIMIT} calls used</span> · <span>{(wordsUsed / 1000).toFixed(0)}k/{FREE_WORD_LIMIT / 1000}k words</span></>
-                        }
+                    ) : (
+                      <div>
+                        <p className="setting-hint" style={{ marginBottom: 8 }}>{t.signInHint}</p>
+                        <button className="btn btn-primary" style={{ gap: 6 }} onClick={() => { closeSettings(); setShowAuthModal(true); }}>
+                          <LogIn size={14} /> {t.signInCreate}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Plan card with usage bars */}
+                  {user && !isAnonymous && plan === 'free' && !hasOwnApiKey() && (
+                    <div className="setting-group">
+                      <label>Plan</label>
+                      <div style={{
+                        background: 'linear-gradient(135deg, var(--bg-surface-secondary), var(--bg-surface))',
+                        border: '1px solid var(--border-primary)',
+                        borderRadius: 10,
+                        padding: '16px',
+                      }}>
+                        <div style={{ marginBottom: 14 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: 4 }}>
+                            <span>{t.apiCalls}</span>
+                            <span style={{ fontWeight: 600, color: callsUsed >= FREE_CALL_LIMIT ? '#dc2626' : 'var(--text-secondary)' }}>
+                              {callsUsed} / {FREE_CALL_LIMIT}
+                            </span>
+                          </div>
+                          <div style={{ height: 5, background: 'var(--border-primary)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${Math.min((callsUsed / FREE_CALL_LIMIT) * 100, 100)}%`, background: callsUsed >= FREE_CALL_LIMIT ? '#dc2626' : 'var(--color-primary-500)', borderRadius: 3, transition: 'width 0.3s' }} />
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: 4 }}>
+                            <span>{t.wordsProcessed}</span>
+                            <span style={{ fontWeight: 600, color: wordsUsed >= FREE_WORD_LIMIT ? '#dc2626' : 'var(--text-secondary)' }}>
+                              {(wordsUsed / 1000).toFixed(1)}k / {FREE_WORD_LIMIT / 1000}k
+                            </span>
+                          </div>
+                          <div style={{ height: 5, background: 'var(--border-primary)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${Math.min((wordsUsed / FREE_WORD_LIMIT) * 100, 100)}%`, background: wordsUsed >= FREE_WORD_LIMIT ? '#dc2626' : 'var(--color-primary-500)', borderRadius: 3, transition: 'width 0.3s' }} />
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: '0.68rem', color: 'var(--text-tertiary)', marginBottom: 14 }}>
+                          {t.resetsIn} {daysUntilReset} {t.days}
+                        </div>
+
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 14 }}>
+                          <span>{t.proIncludes}</span>
+                        </div>
+
+                        <button
+                          className="btn btn-primary"
+                          style={{ width: '100%', justifyContent: 'center', gap: 6, padding: '10px', fontSize: '0.85rem' }}
+                          onClick={() => { closeSettings(); setShowUpgradeModal('voluntary'); }}
+                        >
+                          <Crown size={14} />
+                          <span style={{ textDecoration: 'line-through', opacity: 0.6, fontSize: '0.78rem' }}>{t.priceOriginal}</span>
+                          {t.upgradeToPro}
+                          <span style={{
+                            background: '#dc2626', color: '#fff', fontSize: '0.6rem', fontWeight: 700,
+                            padding: '1px 5px', borderRadius: 3, marginLeft: 2,
+                          }}>
+                            {t.priceDiscount}
+                          </span>
+                        </button>
+                        <p style={{ textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-tertiary)', marginTop: 6 }}>
+                          {t.stripeNote}
+                        </p>
                       </div>
                     </div>
-                    {plan === 'free' && !hasApiKey() && (
-                      <button className="btn btn-primary" style={{ fontSize: '0.75rem', padding: '4px 10px', gap: 4 }} onClick={() => { setShowSettings(false); setShowUpgradeModal(true); }}>
-                        <Crown size={12} /> Upgrade
-                      </button>
-                    )}
-                    <button className="btn btn-ghost" style={{ fontSize: '0.75rem', gap: 4 }} onClick={async () => { await signOut(); setShowSettings(false); }}>
-                      <LogOut size={13} /> Sign out
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="setting-hint" style={{ marginBottom: 8 }}>Sign in for 15 free AI-powered calls per month.</p>
-                    <button className="btn btn-primary" style={{ gap: 6 }} onClick={() => { setShowSettings(false); setShowAuthModal(true); }}>
-                      <LogIn size={14} /> Sign In / Create Account
-                    </button>
-                  </div>
-                )}
+                  )}
+
+                  {user && plan === 'pro' && (
+                    <div className="setting-group">
+                      <label>Plan</label>
+                      <div style={{
+                        background: 'linear-gradient(135deg, var(--bg-surface-secondary), var(--bg-surface))',
+                        border: '1px solid var(--border-primary)',
+                        borderRadius: 10,
+                        padding: '16px',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                      }}>
+                        <Crown size={16} style={{ color: '#f59e0b' }} />
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{t.proUnlimited}</span>
+                      </div>
+                    </div>
+                  )}
               </div>
 
-              <div className="setting-group">
-                <label>{t.settingsOrProvideKey}</label>
-                <div className="api-key-input-wrapper">
-                  <input
-                    type="password"
-                    value={apiKeyDraft}
-                    onChange={(e) => setApiKeyDraft(e.target.value)}
-                    onBlur={() => commitApiKey(apiKeyDraft)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') commitApiKey(apiKeyDraft); }}
-                    placeholder="AIza..."
-                    aria-label="Google AI API Key"
-                  />
-                  <div className="api-badge google-badge">gemini-2.5-flash</div>
-                </div>
-                <p className="setting-hint">
-                  {t.settingsHint}
-                  {t.getFreeKey} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary-500)' }}>Google AI Studio</a>.
-                  Entering your own key gives you unlimited usage.
-                </p>
-                {hasApiKey() && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                    <button
-                      className="btn btn-ghost"
-                      style={{ fontSize: '0.75rem', padding: '4px 12px' }}
-                      disabled={apiTestResult === 'testing'}
-                      onClick={async () => {
-                        setApiTestResult('testing');
-                        try {
-                          const result = await splitChatWithGemini('User: Hello\nAI: Hi there!');
-                          setApiTestResult(result && result.messages.length > 0 ? 'ok' : 'fail');
-                        } catch {
-                          setApiTestResult('fail');
-                        }
-                      }}
-                    >
-                      {apiTestResult === 'testing' ? t.testing : t.testApiKey}
-                    </button>
-                    {apiTestResult === 'ok' && <span style={{ color: '#16a34a', fontSize: '0.75rem', fontWeight: 600 }}>{t.apiOk}</span>}
-                    {apiTestResult === 'fail' && <span style={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: 600 }}>{getLastApiError()?.message || 'Failed'}</span>}
+              {/* ── API Key Tab ── */}
+              <div className={`settings-tab-panel ${settingsTab === 'apikey' ? 'active' : ''}`} ref={settingsApikeyRef}>
+                {plan === 'pro' && (
+                  <div className="setting-group">
+                    <div style={{
+                      background: 'linear-gradient(135deg, var(--bg-surface-secondary), var(--bg-surface))',
+                      border: '1px solid var(--border-primary)',
+                      borderRadius: 10, padding: '16px', textAlign: 'center', marginBottom: 4,
+                    }}>
+                      <Crown size={18} style={{ color: '#f59e0b', marginBottom: 6 }} />
+                      <p style={{ fontSize: '0.85rem', fontWeight: 600, margin: '0 0 4px' }}>{t.proNoKeyNeeded}</p>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', margin: 0 }}>{t.proNoKeyHint}</p>
+                    </div>
                   </div>
                 )}
-                {apiError && (
-                  <p className="setting-hint" style={{ color: '#dc2626', fontWeight: 600 }}>{apiError}</p>
-                )}
+                <div className="setting-group">
+                  {plan === 'pro' && (
+                    <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{t.proAdvancedKey}</label>
+                  )}
+                  {plan !== 'pro' && <label>{t.settingsOrProvideKey}</label>}
+                  <div className="api-key-input-wrapper">
+                    <input
+                      type="password"
+                      value={apiKeyDraft}
+                      onChange={(e) => setApiKeyDraft(e.target.value)}
+                      onBlur={() => commitApiKey(apiKeyDraft)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitApiKey(apiKeyDraft); }}
+                      placeholder="AIza..."
+                      aria-label="Google AI API Key"
+                    />
+                    <div className="api-badge google-badge">gemini-2.5-flash</div>
+                  </div>
+                  {plan === 'pro' && hasApiKey() ? (
+                    <p className="setting-hint" style={{ color: '#f59e0b' }}>{t.proKeyOverride}</p>
+                  ) : plan !== 'pro' ? (
+                    <p className="setting-hint">
+                      {t.settingsHint}
+                      {t.getFreeKey} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary-500)' }}>Google AI Studio</a>.
+                      {t.ownKeyUnlimited}
+                    </p>
+                  ) : null}
+                  {hasApiKey() && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ fontSize: '0.75rem', padding: '4px 12px' }}
+                        disabled={apiTestResult === 'testing'}
+                        onClick={async () => {
+                          setApiTestResult('testing');
+                          try {
+                            const result = await splitChatWithGemini('User: Hello\nAI: Hi there!');
+                            setApiTestResult(result && result.messages.length > 0 ? 'ok' : 'fail');
+                          } catch {
+                            setApiTestResult('fail');
+                          }
+                        }}
+                      >
+                        {apiTestResult === 'testing' ? t.testing : t.testApiKey}
+                      </button>
+                      {apiTestResult === 'ok' && <span style={{ color: '#16a34a', fontSize: '0.75rem', fontWeight: 600 }}>{t.apiOk}</span>}
+                      {apiTestResult === 'fail' && <span style={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: 600 }}>{getLastApiError()?.message || 'Failed'}</span>}
+                    </div>
+                  )}
+                  {apiError && (
+                    <p className="setting-hint" style={{ color: '#dc2626', fontWeight: 600 }}>{apiError}</p>
+                  )}
+                </div>
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-primary" onClick={() => { commitApiKey(apiKeyDraft); setShowSettings(false); }}>{t.done}</button>
+              <button className="btn btn-primary" onClick={() => { commitApiKey(apiKeyDraft); closeSettings(); }}>{t.done}</button>
             </div>
           </div>
         </div>
@@ -1212,15 +1580,69 @@ export default function App() {
           onSignInWithGoogle={signInWithGoogle}
           onSignInWithEmail={signInWithEmail}
           onSignUp={signUp}
+          t={t}
         />
       )}
 
       {showUpgradeModal && (
         <UpgradeModal
           onClose={() => setShowUpgradeModal(false)}
+          onCheckoutComplete={async () => {
+            const poll = async (n: number) => {
+              const p = await refreshUsage();
+              if (p === 'pro') { setShowUpgradeModal(false); return; }
+              if (n >= 15) { setShowUpgradeModal(false); return; }
+              setTimeout(() => poll(n + 1), 2000);
+            };
+            poll(0);
+          }}
+          hitLimit={showUpgradeModal === 'limit'}
           callsUsed={callsUsed}
           wordsUsed={wordsUsed}
+          daysUntilReset={daysUntilReset}
+          t={t}
         />
+      )}
+
+      {showSignInPrompt && (
+        <SignInPromptModal
+          onClose={() => setShowSignInPrompt(false)}
+          onOpenAuthModal={() => setShowAuthModal(true)}
+          t={t}
+        />
+      )}
+
+      {showProSwitchConfirm && (
+        <div className="modal-overlay no-print" onClick={() => setShowProSwitchConfirm(false)} role="dialog" aria-modal="true">
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Crown size={18} style={{ color: '#f59e0b' }} />
+                {t.proSwitchConfirm}
+              </h3>
+              <button className="btn-close" onClick={() => setShowProSwitchConfirm(false)} aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="settings-body" style={{ padding: '20px 24px' }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0 0 20px' }}>
+                {t.proSwitchConfirmDesc}
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn btn-ghost" onClick={() => setShowProSwitchConfirm(false)}>
+                  {t.proSwitchCancel}
+                </button>
+                <button className="btn btn-primary" onClick={() => {
+                  localStorage.removeItem('googleApiKey');
+                  setGoogleApiKey('');
+                  setApiError(null);
+                  setShowProSwitchConfirm(false);
+                  toast('success', t.proNoKeyNeeded);
+                }}>
+                  <Crown size={14} /> {t.proSwitchYes}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

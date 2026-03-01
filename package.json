@@ -1,7 +1,7 @@
 {
   "name": "gemini-pdf-tool",
   "private": true,
-  "version": "2.3.0",
+  "version": "2.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@stripe/react-stripe-js": "^5.6.0",
+    "@stripe/stripe-js": "^8.8.0",
     "@supabase/supabase-js": "^2.97.0",
     "dompurify": "^3.3.1",
     "highlight.js": "^11.11.1",

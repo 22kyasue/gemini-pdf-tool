@@ -34,6 +34,11 @@ export function hasApiKey(): boolean {
     return getUserApiKey() !== null || _supabaseSession !== null;
 }
 
+/** Returns true only if the user has entered their own Gemini API key (BYOK). */
+export function hasOwnApiKey(): boolean {
+    return getUserApiKey() !== null;
+}
+
 // ── Types ─────────────────────────────────────────────────────
 
 /** Result of AI-based chat splitting */
@@ -169,6 +174,7 @@ interface ProxyResponse {
     wordsUsed?: number;
     wordsLimit?: number;
     plan?: string;
+    isAnonymous?: boolean;
 }
 
 async function callGeminiProxy(body: ProxyRequestBody): Promise<GeminiResult | null> {
@@ -204,9 +210,13 @@ async function callGeminiProxy(body: ProxyRequestBody): Promise<GeminiResult | n
         if (!res.ok) {
             if (data.error === 'limit_exceeded') {
                 const reason = data.reason === 'words' ? 'word limit' : 'call limit';
+                const prefix = data.isAnonymous ? 'ANON_LIMIT_EXCEEDED' : 'LIMIT_EXCEEDED';
+                const cta = data.isAnonymous
+                    ? 'Sign in for free to get 10 calls/week.'
+                    : 'Upgrade to Pro for unlimited usage.';
                 _lastApiError = {
                     code: 429,
-                    message: `LIMIT_EXCEEDED: You've reached your free ${reason}. Upgrade to Pro for unlimited usage.`,
+                    message: `${prefix}: You've reached your ${reason}. ${cta}`,
                 };
                 return null;
             }

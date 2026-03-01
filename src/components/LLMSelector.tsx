@@ -1,4 +1,5 @@
-import { Search } from 'lucide-react';
+import { Search, Sparkles, MessageSquare, Brain, Bot } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useTranslation } from '../hooks/useTranslation';
 
 // ══════════════════════════════════════════════════════════
@@ -7,11 +8,11 @@ import { useTranslation } from '../hooks/useTranslation';
 
 export type SimpleLLM = 'Gemini' | 'ChatGPT' | 'Claude' | 'Other LLM';
 
-const LLM_CHIPS: { value: SimpleLLM; label: string; icon: string }[] = [
-    { value: 'Gemini', label: 'Gemini', icon: '✨' },
-    { value: 'ChatGPT', label: 'ChatGPT', icon: '💬' },
-    { value: 'Claude', label: 'Claude', icon: '🧠' },
-    { value: 'Other LLM', label: 'Other LLM', icon: '🤖' },
+const LLM_CHIPS: { value: SimpleLLM; label: string; Icon: LucideIcon }[] = [
+    { value: 'Gemini', label: 'Gemini', Icon: Sparkles },
+    { value: 'ChatGPT', label: 'ChatGPT', Icon: MessageSquare },
+    { value: 'Claude', label: 'Claude', Icon: Brain },
+    { value: 'Other LLM', label: 'Other LLM', Icon: Bot },
 ];
 
 export function LLMSelector({ detected }: { detected: SimpleLLM }) {
@@ -28,7 +29,7 @@ export function LLMSelector({ detected }: { detected: SimpleLLM }) {
                         key={chip.label}
                         className={`llm-chip ${detected === chip.value ? 'llm-chip-active' : ''}`}
                     >
-                        <span className="llm-chip-icon">{chip.icon}</span>
+                        <span className="llm-chip-icon"><chip.Icon size={12} strokeWidth={2.5} /></span>
                         {chip.label}
                     </div>
                 ))}
