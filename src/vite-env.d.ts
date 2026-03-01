@@ -31,3 +31,23 @@ declare module 'html2pdf.js' {
     function html2pdf(): Html2Pdf;
     export = html2pdf;
 }
+declare module 'highlight.js/lib/core' {
+    import { HLJSApi } from 'highlight.js';
+    const hljs: HLJSApi;
+    export default hljs;
+}
+
+declare module 'highlight.js/lib/languages/*' {
+    import { LanguageFn } from 'highlight.js';
+    const language: LanguageFn;
+    export default language;
+}
+declare module 'remark-math' {
+    const remarkMath: any;
+    export default remarkMath;
+}
+
+declare module 'rehype-katex' {
+    const rehypeKatex: any;
+    export default rehypeKatex;
+}
