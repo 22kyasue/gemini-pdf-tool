@@ -22,10 +22,12 @@
       "Bash(python3:*)",
       "Bash(cat:*)",
       "Bash(tasklist 2>/dev/null | grep -i node | head -20 || ps aux | grep node | head -20)",
+      "WebFetch(domain:chromewebstore.google.com)",
+      "WebFetch(domain:creati.ai)",
+      "Bash(npm install:*)",
       "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm run lint 2>&1)",
       "Bash(cd /c/Users/stake/githubproject/gemini-pdf-tool && npm install @supabase/supabase-js 2>&1)",
       "Bash(cd C:\\\\Users\\\\stake\\\\githubproject\\\\gemini-pdf-tool:*)",
-      "Bash(npm install:*)",
       "Bash(npx supabase:*)",
       "Bash(npx vite:*)",
       "WebFetch(domain:supabase.com)",
@@ -37,8 +39,6 @@
       "WebFetch(domain:blog.scottlogic.com)",
       "WebFetch(domain:apify.com)",
       "WebFetch(domain:docs.scrapeless.com)",
-      "WebFetch(domain:chromewebstore.google.com)",
-      "WebFetch(domain:creati.ai)",
       "Bash(supabase functions:*)",
       "Bash(pip install:*)",
       "Bash(python:*)",
@@ -47,7 +47,9 @@
       "Bash(timeout 5 npm run dev:*)",
       "Bash(npm run dev 2>&1)",
       "Bash(lsof -ti:5173 | xargs kill -9 2>/dev/null; sleep 1 && echo \"Port cleared\")",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)"
     ]
   }
 }

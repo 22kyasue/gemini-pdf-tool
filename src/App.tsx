@@ -40,7 +40,7 @@ import { PdfPrintHeader } from './components/PdfPrintHeader';
 import { _onRenderError } from './components/ErrorBoundary';
 import { useTranslation } from './hooks/useTranslation';
 import { useAuth } from './hooks/useAuth';
-import { useUsage, FREE_CALL_LIMIT, FREE_WORD_LIMIT, ANON_CALL_LIMIT, ANON_WORD_LIMIT } from './hooks/useUsage';
+import { useUsage, FREE_CALL_LIMIT, FREE_WORD_LIMIT, ANON_CALL_LIMIT } from './hooks/useUsage';
 import { AuthModal } from './components/AuthModal';
 import { UpgradeModal } from './components/UpgradeModal';
 import { SignInPromptModal } from './components/SignInPromptModal';

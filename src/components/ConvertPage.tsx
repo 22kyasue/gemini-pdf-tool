@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { FileText, Link2, Loader, AlertCircle, ArrowRight, Download, Zap, Shield, Globe, Crown, LogIn, LogOut, Settings, Sun, Moon } from 'lucide-react';
+import { FileText, Link2, Loader, AlertCircle, ArrowRight, Download, Zap, Shield, Globe, LogIn, LogOut, Sun, Moon } from 'lucide-react';
 import { importShareLink, validateShareUrl, turnsToEditorText, ShareLinkError } from '../utils/shareImport';
-import type { ShareTurn } from '../utils/shareImport';
 import { exportSharePdf } from '../utils/exportSharePdf';
 import { toast } from '../hooks/useToast';
 import type { User } from '@supabase/supabase-js';
@@ -32,7 +31,7 @@ interface ConvertPageProps {
 }
 
 export function ConvertPage({
-  t, lang, toggleLang, user, isAnonymous, plan,
+  t, lang, toggleLang, user, isAnonymous,
   onSignIn, onSignOut, onNavigateEditor,
 }: ConvertPageProps) {
   const [url, setUrl] = useState('');

@@ -8,7 +8,6 @@ import type { ShareTurn } from './shareImport';
 // Page geometry constants (must match exportToPdf)
 const A4_HEIGHT_MM = 297;
 const MARGIN_MM = 15;
-const PRINTABLE_WIDTH_MM = A4_HEIGHT_MM - MARGIN_MM * 2; // unused but for clarity
 const BASE_WIDTH = 794;
 const CONTENT_MM_PER_PAGE = A4_HEIGHT_MM - MARGIN_MM * 2; // 267mm of content per page
 const MM_PER_PX = (210 - MARGIN_MM * 2) / BASE_WIDTH;     // 180mm / 794px ≈ 0.2267
