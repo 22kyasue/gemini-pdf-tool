@@ -122,7 +122,7 @@ export function ConvertPage({
     <div className="convert-page">
       {/* ── Header ── */}
       <header className="convert-header">
-        <a href="#/" className="convert-brand" onClick={e => { e.preventDefault(); onNavigateEditor(); }}>
+        <a href="#/" className="convert-brand">
           <div className="brand-logo"><FileText size={20} /></div>
           <span className="brand-text">{t.appTitle}</span>
         </a>

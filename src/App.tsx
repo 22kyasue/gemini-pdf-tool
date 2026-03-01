@@ -47,6 +47,7 @@ import { SignInPromptModal } from './components/SignInPromptModal';
 import { EnhanceThread } from './components/EnhanceThread';
 import { ShareLinkBar } from './components/ShareLinkBar';
 import { ConvertPage } from './components/ConvertPage';
+import { HomePage } from './components/HomePage';
 import { looksLikeShareUrl } from './utils/shareImport';
 import { exportSharePdf } from './utils/exportSharePdf';
 
@@ -98,14 +99,16 @@ The narrative follows a "Investment -> Innovation -> Efficiency" cycle.
 This confirms our 2026 sustainability targets are achievable ahead of schedule.`;
 
 // Simple hash-based route helper
-function getRoute(): 'editor' | 'convert' {
+function getRoute(): 'home' | 'editor' | 'convert' {
   const hash = window.location.hash.replace('#', '').replace(/^\//, '');
-  return hash === 'convert' ? 'convert' : 'editor';
+  if (hash === 'convert') return 'convert';
+  if (hash === 'editor') return 'editor';
+  return 'home';
 }
 
 export default function App() {
   const { lang, toggleLang, t } = useTranslation();
-  const [route, setRoute] = useState<'editor' | 'convert'>(getRoute);
+  const [route, setRoute] = useState<'home' | 'editor' | 'convert'>(getRoute);
 
   useEffect(() => {
     const onHashChange = () => setRoute(getRoute());
@@ -113,8 +116,18 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const navigateTo = useCallback((target: 'editor' | 'convert') => {
-    window.location.hash = target === 'convert' ? '#/convert' : '#/';
+  const navigateTo = useCallback((target: 'home' | 'editor' | 'convert') => {
+    const hashMap = { home: '#/', editor: '#/editor', convert: '#/convert' };
+    const applyRoute = () => {
+      setRoute(target);
+      window.location.hash = hashMap[target];
+    };
+    // Use View Transitions API for a smooth crossfade when available
+    if ((document as any).startViewTransition) {
+      (document as any).startViewTransition(applyRoute);
+    } else {
+      applyRoute();
+    }
   }, []);
 
   // -- Auth & Usage --
@@ -126,6 +139,7 @@ export default function App() {
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState<false | 'limit' | 'voluntary'>(false);
+  const [upgradePriceId, setUpgradePriceId] = useState<string | undefined>(undefined);
   const [showSignInPrompt, setShowSignInPrompt] = useState(false);
   const [showProSwitchConfirm, setShowProSwitchConfirm] = useState(false);
   const [showShareBar, setShowShareBar] = useState(false);
@@ -260,7 +274,7 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark' || saved === 'light') return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return 'dark';
   });
 
   useEffect(() => {
@@ -839,6 +853,63 @@ export default function App() {
     poll();
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Home Page Route ──
+  if (route === 'home') {
+    return (
+      <>
+        <HomePage
+          t={t}
+          lang={lang}
+          toggleLang={toggleLang}
+          user={user}
+          isAnonymous={isAnonymous}
+          plan={plan}
+          onSignIn={() => setShowAuthModal(true)}
+          onSignOut={signOut}
+          onNavigateEditor={() => navigateTo('editor')}
+          onNavigateConvert={() => navigateTo('convert')}
+          onUpgrade={(period) => {
+            const pid = period === 'yearly'
+              ? (import.meta.env.VITE_STRIPE_PRICE_ID_YEARLY as string | undefined)
+              : undefined; // monthly uses default
+            setUpgradePriceId(pid);
+            setShowUpgradeModal('voluntary');
+          }}
+        />
+        <ToastContainer />
+        {showAuthModal && (
+          <AuthModal
+            onClose={() => setShowAuthModal(false)}
+            onSignInWithGoogle={signInWithGoogle}
+            onSignInWithEmail={signInWithEmail}
+            onSignUp={signUp}
+            t={t}
+          />
+        )}
+        {showUpgradeModal && (
+          <UpgradeModal
+            onClose={() => { setShowUpgradeModal(false); setUpgradePriceId(undefined); }}
+            onCheckoutComplete={async () => {
+              const poll = async (n: number) => {
+                const p = await refreshUsage();
+                if (p === 'pro') { setShowUpgradeModal(false); setUpgradePriceId(undefined); return; }
+                if (n >= 15) { setShowUpgradeModal(false); setUpgradePriceId(undefined); return; }
+                setTimeout(() => poll(n + 1), 2000);
+              };
+              poll(0);
+            }}
+            hitLimit={false}
+            priceId={upgradePriceId}
+            callsUsed={callsUsed}
+            wordsUsed={wordsUsed}
+            daysUntilReset={daysUntilReset}
+            t={t}
+          />
+        )}
+      </>
+    );
+  }
+
   // ── Convert Page Route ──
   if (route === 'convert') {
     return (
@@ -870,9 +941,9 @@ export default function App() {
         {showAuthModal && (
           <AuthModal
             onClose={() => setShowAuthModal(false)}
-            onGoogleSignIn={signInWithGoogle}
-            onEmailSignIn={signInWithEmail}
-            onEmailSignUp={signUp}
+            onSignInWithGoogle={signInWithGoogle}
+            onSignInWithEmail={signInWithEmail}
+            onSignUp={signUp}
             t={t}
           />
         )}
@@ -889,10 +960,10 @@ export default function App() {
       onDrop={handleDrop}
     >
       <header className="app-header">
-        <div className="brand">
+        <a href="#/" className="brand" style={{ textDecoration: 'none' }}>
           <div className="brand-logo"><FileText size={20} /></div>
           <div className="brand-text">{t.appTitle}{plan === 'pro' && <span className="beta-tag">PRO</span>}</div>
-        </div>
+        </a>
 
         <div className="header-actions">
           {/* Convert page link */}

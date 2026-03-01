@@ -14,6 +14,7 @@ interface UpgradeModalProps {
   wordsUsed: number;
   daysUntilReset: number;
   hitLimit?: boolean;
+  priceId?: string;
   t: {
     upgradeTitle: string;
     upgradeTitleLimit: string;
@@ -40,7 +41,7 @@ interface UpgradeModalProps {
   };
 }
 
-export function UpgradeModal({ onClose, onCheckoutComplete, callsUsed, wordsUsed, daysUntilReset, hitLimit, t }: UpgradeModalProps) {
+export function UpgradeModal({ onClose, onCheckoutComplete, callsUsed, wordsUsed, daysUntilReset, hitLimit, priceId: priceIdOverride, t }: UpgradeModalProps) {
   const [view, setView] = useState<'info' | 'checkout' | 'activating'>('info');
   const [error, setError] = useState<string | null>(null);
   const prefetchedSecret = useRef<Promise<string> | null>(null);
@@ -52,7 +53,7 @@ export function UpgradeModal({ onClose, onCheckoutComplete, callsUsed, wordsUsed
       if (!session) throw new Error('Not signed in');
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-      const priceId = import.meta.env.VITE_STRIPE_PRICE_ID as string;
+      const priceId = priceIdOverride || import.meta.env.VITE_STRIPE_PRICE_ID as string;
 
       const res = await fetch(`${supabaseUrl}/functions/v1/create-checkout`, {
         method: 'POST',
